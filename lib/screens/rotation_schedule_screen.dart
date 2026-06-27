@@ -1,0 +1,334 @@
+import 'package:flutter/material.dart';
+
+import '../services/cron.dart';
+
+/// Full-screen editor for the rotation schedule. Pops with the compiled
+/// `List<String>` of cron expressions (or null if cancelled).
+class RotationScheduleScreen extends StatefulWidget {
+  final List<String> initial;
+  final QuietHours? sleep;
+  const RotationScheduleScreen({super.key, required this.initial, this.sleep});
+
+  @override
+  State<RotationScheduleScreen> createState() => _RotationScheduleScreenState();
+}
+
+class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
+  late List<ScheduleCard> _cards;
+
+  @override
+  void initState() {
+    super.initState();
+    _cards = cardsFromCron(widget.initial);
+  }
+
+  List<String> get _compiled => compileCards(_cards);
+  int get _totalRules => _compiled.length;
+
+  static const _dayOrder = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun (cron dow)
+
+  List<int> _everyItems(String unit) =>
+      unit == 'hours' ? const [1, 2, 3, 4, 6, 8, 12] : const [5, 10, 15, 20, 30];
+
+  Future<void> _editTime(ScheduleCard card, int idx) async {
+    final parts = card.times[idx].split(':');
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: int.tryParse(parts[0]) ?? 0,
+        minute: parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        card.times[idx] =
+            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+        card.times.sort();
+      });
+    }
+  }
+
+  String _formatRun(DateTime d) {
+    final dow = dayLabels[d.weekday % 7];
+    return '$dow ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final upcoming = nextRuns(_compiled, sleep: widget.sleep, count: 4)
+        .map(_formatRun)
+        .toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Rotation Schedule'),
+        actions: [
+          TextButton(
+            onPressed: _totalRules <= 7
+                ? () => Navigator.pop(context, _compiled)
+                : null,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          for (var i = 0; i < _cards.length; i++) _buildCard(i, _cards[i]),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _totalRules >= 7
+                ? null
+                : () => setState(() => _cards.add(ScheduleCard())),
+            icon: const Icon(Icons.add),
+            label: const Text('Add another schedule'),
+          ),
+          if (_totalRules > 7)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'This uses $_totalRules rules, but the device supports at most 7. '
+                'Remove a schedule or simplify the specific times.',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const Divider(height: 32),
+          Text('Upcoming rotations',
+              style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 8),
+          if (upcoming.isEmpty)
+            const Text('No upcoming rotations for this schedule.',
+                style: TextStyle(color: Colors.grey))
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [for (final r in upcoming) Chip(label: Text(r))],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(int idx, ScheduleCard card) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Schedule ${idx + 1}',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
+                if (_cards.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => setState(() => _cards.removeAt(idx)),
+                  ),
+              ],
+            ),
+            if (card.raw != null)
+              _buildRaw(card)
+            else
+              _buildBuilder(card),
+            const SizedBox(height: 8),
+            Text(describeCard(card),
+                style: Theme.of(context).textTheme.bodySmall),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(() {
+                  if (card.raw == null) {
+                    card.raw = compileCard(card).first;
+                  } else {
+                    card.raw = null;
+                  }
+                }),
+                child: Text(card.raw != null ? 'Use builder' : 'Advanced (cron)'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRaw(ScheduleCard card) {
+    final valid = card.raw == null || isValidCron(card.raw!);
+    return TextFormField(
+      initialValue: card.raw,
+      decoration: InputDecoration(
+        labelText: 'Cron expression',
+        helperText: 'minute hour day-of-week',
+        border: const OutlineInputBorder(),
+        errorText: valid ? null : 'Invalid cron expression',
+      ),
+      onChanged: (v) => setState(() => card.raw = v),
+    );
+  }
+
+  Widget _buildBuilder(ScheduleCard card) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Days
+        Wrap(
+          spacing: 6,
+          children: [
+            for (final m in const ['everyday', 'weekdays', 'weekends', 'custom'])
+              ChoiceChip(
+                label: Text(_daysModeLabel(m)),
+                selected: card.daysMode == m,
+                onSelected: (_) => setState(() => card.daysMode = m),
+              ),
+          ],
+        ),
+        if (card.daysMode == 'custom')
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Wrap(
+              spacing: 6,
+              children: [
+                for (final d in _dayOrder)
+                  FilterChip(
+                    label: Text(dayLabels[d]),
+                    selected: card.customDays.contains(d),
+                    onSelected: (sel) => setState(() {
+                      if (sel) {
+                        card.customDays.add(d);
+                      } else {
+                        card.customDays.remove(d);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 12),
+        // Mode
+        Wrap(
+          spacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('Throughout the day'),
+              selected: card.mode == 'interval',
+              onSelected: (_) => setState(() => card.mode = 'interval'),
+            ),
+            ChoiceChip(
+              label: const Text('At specific times'),
+              selected: card.mode == 'times',
+              onSelected: (_) => setState(() => card.mode = 'times'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (card.mode == 'interval')
+          _buildInterval(card)
+        else
+          _buildTimes(card),
+      ],
+    );
+  }
+
+  Widget _buildInterval(ScheduleCard card) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _dropdown<int>(
+          label: 'Every',
+          value: _everyItems(card.unit).contains(card.every)
+              ? card.every
+              : _everyItems(card.unit).first,
+          items: {for (final v in _everyItems(card.unit)) v: '$v'},
+          onChanged: (v) => setState(() => card.every = v),
+        ),
+        _dropdown<String>(
+          label: 'Unit',
+          value: card.unit,
+          items: const {'minutes': 'minutes', 'hours': 'hours'},
+          onChanged: (v) => setState(() => card.unit = v),
+        ),
+        _dropdown<int>(
+          label: 'From',
+          value: card.fromHour,
+          items: {for (var h = 0; h < 24; h++) h: '${h.toString().padLeft(2, '0')}:00'},
+          onChanged: (v) => setState(() => card.fromHour = v),
+        ),
+        _dropdown<int>(
+          label: 'To',
+          value: card.toHour,
+          items: {for (var h = 0; h < 24; h++) h: '${h.toString().padLeft(2, '0')}:00'},
+          onChanged: (v) => setState(() => card.toHour = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimes(ScheduleCard card) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (var i = 0; i < card.times.length; i++)
+          InputChip(
+            label: Text(card.times[i]),
+            onPressed: () => _editTime(card, i),
+            onDeleted: () => setState(() {
+              card.times.removeAt(i);
+              if (card.times.isEmpty) card.times.add('12:00');
+            }),
+          ),
+        TextButton.icon(
+          onPressed: () => setState(() {
+            card.times.add('12:00');
+            card.times.sort();
+          }),
+          icon: const Icon(Icons.add),
+          label: const Text('Add time'),
+        ),
+      ],
+    );
+  }
+
+  Widget _dropdown<T>({
+    required String label,
+    required T value,
+    required Map<T, String> items,
+    required ValueChanged<T> onChanged,
+  }) {
+    return SizedBox(
+      width: 140,
+      child: DropdownButtonFormField<T>(
+        value: value,
+        isDense: true,
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        items: [
+          for (final e in items.entries)
+            DropdownMenuItem<T>(value: e.key, child: Text(e.value)),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    );
+  }
+
+  String _daysModeLabel(String m) {
+    switch (m) {
+      case 'weekdays':
+        return 'Weekdays';
+      case 'weekends':
+        return 'Weekends';
+      case 'custom':
+        return 'Custom';
+      default:
+        return 'Every day';
+    }
+  }
+}

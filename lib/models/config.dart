@@ -9,8 +9,7 @@ class DeviceConfig {
 
   // Auto Rotate
   final bool autoRotate;
-  final int rotateInterval;
-  final bool autoRotateAligned;
+  final List<String> rotateCron; // standard 5-field cron expressions
   final String rotationMode; // "storage" or "url"
   final String sdRotationMode; // "sequential" or "random"
   final String imageUrl;
@@ -42,8 +41,7 @@ class DeviceConfig {
     required this.timezone,
     required this.ntpServer,
     required this.autoRotate,
-    required this.rotateInterval,
-    required this.autoRotateAligned,
+    required this.rotateCron,
     required this.rotationMode,
     required this.sdRotationMode,
     required this.imageUrl,
@@ -71,8 +69,10 @@ class DeviceConfig {
       timezone: json['timezone'] as String? ?? '',
       ntpServer: json['ntp_server'] as String? ?? '',
       autoRotate: json['auto_rotate'] as bool? ?? false,
-      rotateInterval: (json['rotate_interval'] as num?)?.toInt() ?? 3600,
-      autoRotateAligned: json['auto_rotate_aligned'] as bool? ?? false,
+      rotateCron: (json['rotate_cron'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['0 */12 *'],
       rotationMode: json['rotation_mode'] as String? ?? 'storage',
       sdRotationMode: json['sd_rotation_mode'] as String? ?? 'sequential',
       imageUrl: json['image_url'] as String? ?? '',

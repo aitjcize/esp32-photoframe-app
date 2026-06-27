@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../models/config.dart';
 import '../providers/device_provider.dart';
+import '../services/cron.dart';
+import 'rotation_schedule_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -85,18 +88,10 @@ class SettingsScreen extends StatelessWidget {
                       provider.updateConfig({'auto_rotate': v}),
                 ),
                 ListTile(
-                  title: const Text('Rotation Interval'),
-                  subtitle: Text(_formatDuration(config.rotateInterval)),
+                  title: const Text('Rotation Schedule'),
+                  subtitle: Text(summarizeSchedule(config.rotateCron)),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showIntervalPicker(context, provider),
-                ),
-                SwitchListTile(
-                  title: const Text('Align to Clock'),
-                  subtitle:
-                      const Text('Rotate at round time boundaries'),
-                  value: config.autoRotateAligned,
-                  onChanged: (v) =>
-                      provider.updateConfig({'auto_rotate_aligned': v}),
+                  onTap: () => _editSchedule(context, provider, config),
                 ),
                 ListTile(
                   title: const Text('Source'),
@@ -310,12 +305,20 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  String _formatDuration(int seconds) {
-    if (seconds < 60) return '$seconds seconds';
-    if (seconds < 3600) return '${seconds ~/ 60} minutes';
-    final h = seconds ~/ 3600;
-    final m = (seconds % 3600) ~/ 60;
-    return m > 0 ? '$h hours $m minutes' : '$h hours';
+  Future<void> _editSchedule(
+      BuildContext context, DeviceProvider provider, DeviceConfig config) async {
+    final sleep = config.sleepScheduleEnabled
+        ? QuietHours(true, config.sleepScheduleStart, config.sleepScheduleEnd)
+        : null;
+    final result = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        builder: (_) =>
+            RotationScheduleScreen(initial: config.rotateCron, sleep: sleep),
+      ),
+    );
+    if (result != null) {
+      provider.updateConfig({'rotate_cron': result});
+    }
   }
 
   String _formatMinutes(int minutesFromMidnight) {
@@ -421,22 +424,6 @@ class SettingsScreen extends StatelessWidget {
         }).toList(),
       ),
     );
-  }
-
-  void _showIntervalPicker(BuildContext context, DeviceProvider provider) {
-    final intervals = {
-      300: '5 minutes',
-      900: '15 minutes',
-      1800: '30 minutes',
-      3600: '1 hour',
-      7200: '2 hours',
-      14400: '4 hours',
-      28800: '8 hours',
-      43200: '12 hours',
-      86400: '24 hours',
-    };
-    _showPicker(context, provider, 'Rotation Interval',
-        'rotate_interval', intervals);
   }
 
   void _pickTime(BuildContext context, DeviceProvider provider,

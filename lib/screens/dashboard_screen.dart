@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/device_provider.dart';
+import '../services/cron.dart';
 import '../services/saved_devices.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -203,8 +204,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         config.autoRotate ? 'On' : 'Off',
                       ),
                       _InfoRow(
-                        'Rotation Interval',
-                        _formatDuration(config.rotateInterval),
+                        'Schedule',
+                        summarizeSchedule(config.rotateCron),
                       ),
                       _InfoRow('Source', config.rotationMode == 'url' ? 'URL' : 'Storage'),
                       _InfoRow(
@@ -240,11 +241,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  String _formatDuration(int seconds) {
-    if (seconds < 60) return '${seconds}s';
-    if (seconds < 3600) return '${seconds ~/ 60}m';
-    return '${seconds ~/ 3600}h ${(seconds % 3600) ~/ 60}m';
-  }
 }
 
 class _InfoRow extends StatelessWidget {
