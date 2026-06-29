@@ -17,6 +17,10 @@ class Palette {
   final PaletteColor blue;
   final PaletteColor green;
 
+  /// Grayscale (GC16) palettes carry an ordered gray ramp ([r,g,b] per level)
+  /// here; null for color palettes. When set it drives dithering + packing.
+  final List<List<int>>? grays;
+
   const Palette({
     required this.black,
     required this.white,
@@ -24,6 +28,7 @@ class Palette {
     required this.red,
     required this.blue,
     required this.green,
+    this.grays,
   });
 
   PaletteColor? operator [](String name) {
@@ -48,6 +53,7 @@ class Palette {
   /// Convert to array format: [black, white, yellow, red, reserved, blue, green]
   /// Index 4 is reserved (not used).
   List<List<int>> toArray() {
+    if (grays != null) return grays!;
     return [
       [black.r, black.g, black.b],
       [white.r, white.g, white.b],
@@ -87,3 +93,43 @@ const spectra6 = PalettePair(
 );
 
 const defaultPalette = spectra6;
+
+/// 16-level grayscale ramp ([r,g,b] per level, 255/15 == 17 step).
+const _gray16Ramp = [
+  [0, 0, 0],
+  [17, 17, 17],
+  [34, 34, 34],
+  [51, 51, 51],
+  [68, 68, 68],
+  [85, 85, 85],
+  [102, 102, 102],
+  [119, 119, 119],
+  [136, 136, 136],
+  [153, 153, 153],
+  [170, 170, 170],
+  [187, 187, 187],
+  [204, 204, 204],
+  [221, 221, 221],
+  [238, 238, 238],
+  [255, 255, 255],
+];
+
+const _grayscalePalette = Palette(
+  black: PaletteColor(0, 0, 0),
+  white: PaletteColor(255, 255, 255),
+  // Color entries are unused on a grayscale panel; set to mid-gray.
+  yellow: PaletteColor(128, 128, 128),
+  red: PaletteColor(128, 128, 128),
+  blue: PaletteColor(128, 128, 128),
+  green: PaletteColor(128, 128, 128),
+  grays: _gray16Ramp,
+);
+
+/// Grayscale (GC16 / IT8951) — 16-level gray ramp. theoretical == perceived.
+const grayscale16 = PalettePair(
+  theoretical: _grayscalePalette,
+  perceived: _grayscalePalette,
+);
+
+/// True if [pair] is a grayscale (GC16) palette.
+bool isGrayscalePalette(PalettePair pair) => pair.theoretical.grays != null;

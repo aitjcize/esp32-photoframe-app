@@ -11,6 +11,7 @@ import 'package:image/image.dart' as img;
 
 import '../services/epaper/image_processor.dart' as epaper;
 import '../services/epaper/presets.dart';
+import '../services/epaper/palettes.dart';
 
 /// Full image processing preview screen with adjustable parameters.
 class PreviewScreen extends StatefulWidget {
@@ -66,9 +67,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
   bool _initializing = true; // true until settings loaded and image decoded
   bool _processing = false;
   bool _uploading = false;
-  int _processGeneration = 0; // increments each processImage call to ignore stale results
+  int _processGeneration =
+      0; // increments each processImage call to ignore stale results
   bool _isTouching = false; // true while finger is down in custom mode
-  bool _isDragging = false; // true from first touch until dithered result arrives
+  bool _isDragging =
+      false; // true from first touch until dithered result arrives
   Uint8List? _previewBytes;
   Timer? _debounce;
 
@@ -82,6 +85,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
     // Apply pre-fetched settings if available
     if (widget.initialSettings != null) {
       _applyFromJson(widget.initialSettings!);
+    } else if (_isGrayscale) {
+      // New grayscale frame with no saved settings: default to the grayscale
+      // preset (tuned for monochrome) rather than the color default.
+      _applyPreset('grayscale');
     }
 
     // Use original bytes for live preview — Flutter handles EXIF natively
@@ -116,7 +123,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
     _srcHeight = uiImage.height;
 
     // Extract raw RGBA pixels and create img.Image for processing
-    final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final byteData = await uiImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
     uiImage.dispose();
     codec.dispose();
 
@@ -162,16 +171,19 @@ class _PreviewScreenState extends State<PreviewScreen> {
           ? ColorMethod.lab
           : ColorMethod.rgb;
       _ditherAlgorithm = _parseDitherAlgorithm(
-          json['ditherAlgorithm'] as String? ?? 'floyd-steinberg');
-      _compressDynamicRange =
-          json['compressDynamicRange'] as bool? ?? true;
+        json['ditherAlgorithm'] as String? ?? 'floyd-steinberg',
+      );
+      _compressDynamicRange = json['compressDynamicRange'] as bool? ?? true;
 
-      // Check if this matches a preset
+      // Check if this matches a preset. Compare floats with a tolerance: the
+      // device persists them as 32-bit, so e.g. 1.4 round-trips as 1.39999998
+      // and an exact compare would always fall back to "custom".
+      bool approx(double a, double b) => (a - b).abs() < 1e-3;
       for (final entry in presets.entries) {
         final p = entry.value;
-        if (p.exposure == _exposure &&
-            p.saturation == _saturation &&
-            p.contrast == _contrast &&
+        if (approx(p.exposure, _exposure) &&
+            approx(p.saturation, _saturation) &&
+            approx(p.contrast, _contrast) &&
             p.toneMode == _toneMode &&
             p.colorMethod == _colorMethod &&
             p.ditherAlgorithm == _ditherAlgorithm &&
@@ -196,6 +208,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
+  /// True when the target device is a grayscale (GC16) panel.
+  bool get _isGrayscale =>
+      context.read<DeviceProvider>().systemInfo?.isGrayscale ?? false;
+
+  /// Palette to process with: the 16-level gray ramp for grayscale panels,
+  /// otherwise the default 6-color Spectra palette.
+  PalettePair get _palette => _isGrayscale ? grayscale16 : defaultPalette;
+
   /// Get the effective display dimensions (accounting for orientation swap).
   (int, int) get _displayDims {
     final provider = context.read<DeviceProvider>();
@@ -216,8 +236,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   void _initCustomZoomPan() {
     if (_srcWidth == 0 || _srcHeight == 0) return;
     final (fw, fh) = _displayDims;
-    final fitScale =
-        math.min(fw / _srcWidth, fh / _srcHeight).toDouble();
+    final fitScale = math.min(fw / _srcWidth, fh / _srcHeight).toDouble();
     _zoom = fitScale;
     _panX = (fw - _srcWidth * fitScale) / 2;
     _panY = (fh - _srcHeight * fitScale) / 2;
@@ -330,8 +349,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       // Pinch zoom around focal point
       if (details.scale != 1.0) {
         final zoomFactor = details.scale / _lastScale;
-        final fitScale =
-            math.min(fw / _srcWidth, fh / _srcHeight).toDouble();
+        final fitScale = math.min(fw / _srcWidth, fh / _srcHeight).toDouble();
         final maxZoom =
             math.max(fw / _srcWidth, fh / _srcHeight).toDouble() * 5;
         final newZoom = (_zoom * zoomFactor).clamp(fitScale * 0.25, maxZoom);
@@ -429,6 +447,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
         zoom: _zoom,
         panX: _panX,
         panY: _panY,
+        palette: _palette,
       );
 
       if (!mounted || generation != _processGeneration) return;
@@ -443,9 +462,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
         _processing = false;
         if (!_isTouching) _isDragging = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Processing failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Processing failed: $e')));
     }
   }
 
@@ -468,21 +487,24 @@ class _PreviewScreenState extends State<PreviewScreen> {
         _processing = false;
         if (!_isTouching) _isDragging = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Processing failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Processing failed: $e')));
     }
   }
 
   /// Run preview processing on a prepared image.
   Future<void> _processPreviewWith(
-      epaper.PreparedImage prepared, int generation) async {
+    epaper.PreparedImage prepared,
+    int generation,
+  ) async {
     final params = _buildParams();
 
     final previewPng = epaper.processPreview(
       prepared,
       params: params,
       backgroundColor: _backgroundColor,
+      palette: _palette,
     );
 
     if (!mounted || generation != _processGeneration) return;
@@ -534,6 +556,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       nativeHeight: sysInfo?.displayHeight ?? 480,
       orientation: config?.displayOrientation,
       backgroundColor: _backgroundColor,
+      palette: _palette,
     );
   }
 
@@ -550,23 +573,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
       final epdgz = await _processForDevice();
       if (epdgz == null || !mounted) return;
 
-      await api.displayImage(
-        epdgz,
-        '${widget.filename}.epdgz',
-      );
+      await api.displayImage(epdgz, '${widget.filename}.epdgz');
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
       setState(() => _uploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image displayed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Image displayed')));
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
       setState(() => _uploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed: $e')));
     }
   }
 
@@ -615,8 +635,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       final tsSuffix = uploadTs
           .toRadixString(36)
           .substring(math.max(0, uploadTs.toRadixString(36).length - 4));
-      final baseName =
-          fnv.toRadixString(16).padLeft(8, '0') + tsSuffix;
+      final baseName = fnv.toRadixString(16).padLeft(8, '0') + tsSuffix;
 
       await api.uploadImage(
         album,
@@ -628,16 +647,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
       Navigator.pop(context, true); // close editor
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image uploaded')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Image uploaded')));
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
       setState(() => _uploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
     }
   }
 
@@ -664,12 +683,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
         title: const Text('Image Processing'),
         actions: [
           IconButton(
-            onPressed: _prepared != null && !_uploading && !_processing ? _displayImage : null,
+            onPressed: _prepared != null && !_uploading && !_processing
+                ? _displayImage
+                : null,
             icon: const Icon(Icons.cast),
             tooltip: 'Display on frame',
           ),
           IconButton(
-            onPressed: _prepared != null && !_uploading && !_processing ? _uploadToAlbum : null,
+            onPressed: _prepared != null && !_uploading && !_processing
+                ? _uploadToAlbum
+                : null,
             icon: const Icon(Icons.upload),
             tooltip: 'Upload to album',
           ),
@@ -677,9 +700,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
         ],
       ),
       body: ListView(
-        physics: _isTouching
-            ? const NeverScrollableScrollPhysics()
-            : null,
+        physics: _isTouching ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.all(16),
         children: [
           // Preview image — always show something
@@ -712,7 +733,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     borderRadius: BorderRadius.circular(4),
                     child: () {
                       // Custom mode drag: show live pan/zoom preview
-                      if (_isDragging && _scaleMode == epaper.ScaleMode.custom && _srcWidth > 0) {
+                      if (_isDragging &&
+                          _scaleMode == epaper.ScaleMode.custom &&
+                          _srcWidth > 0) {
                         return _buildLiveCustomPreview();
                       }
                       // Show previous/current dithered result (spinner overlays during processing)
@@ -808,8 +831,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
               child: Text(
                 'Drag to pan, pinch to zoom on the preview above',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           // Background color (only for fit/custom)
@@ -817,8 +840,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('Background',
-                    style: Theme.of(context).textTheme.bodyMedium),
+                Text(
+                  'Background',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
                 const Spacer(),
                 SegmentedButton<String>(
                   segments: const [
@@ -842,14 +867,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
           Wrap(
             spacing: 8,
             children: [
-              ...presets.keys.map((name) => FilterChip(
-                    label: Text(name[0].toUpperCase() + name.substring(1)),
-                    selected: _presetName == name,
-                    onSelected: (_) {
-                      _applyPreset(name);
-                      _processPreview();
-                    },
-                  )),
+              ...presets.keys.map(
+                (name) => FilterChip(
+                  label: Text(name[0].toUpperCase() + name.substring(1)),
+                  selected: _presetName == name,
+                  onSelected: (_) {
+                    _applyPreset(name);
+                    _processPreview();
+                  },
+                ),
+              ),
               FilterChip(
                 label: const Text('Custom'),
                 selected: _presetName == 'custom',
@@ -880,10 +907,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
           _buildDropdown<ColorMethod>(
             'Color Matching',
             _colorMethod,
-            {
-              ColorMethod.rgb: 'RGB',
-              ColorMethod.lab: 'LAB',
-            },
+            {ColorMethod.rgb: 'RGB', ColorMethod.lab: 'LAB'},
             (v) {
               setState(() => _colorMethod = v);
               _onParamChanged();
@@ -897,20 +921,18 @@ class _PreviewScreenState extends State<PreviewScreen> {
             _onParamChanged();
           }),
 
-          // Saturation
-          _buildSlider('Saturation', _saturation, 0.0, 2.0, (v) {
-            setState(() => _saturation = v);
-            _onParamChanged();
-          }),
+          // Saturation (hidden on grayscale panels — has no effect)
+          if (!_isGrayscale)
+            _buildSlider('Saturation', _saturation, 0.0, 2.0, (v) {
+              setState(() => _saturation = v);
+              _onParamChanged();
+            }),
 
           // Tone mode
           _buildDropdown<ToneMode>(
             'Tone Mapping',
             _toneMode,
-            {
-              ToneMode.contrast: 'Contrast',
-              ToneMode.scurve: 'S-Curve',
-            },
+            {ToneMode.contrast: 'Contrast', ToneMode.scurve: 'S-Curve'},
             (v) {
               setState(() => _toneMode = v);
               _onParamChanged();
@@ -935,8 +957,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
               setState(() => _shadowBoost = v);
               _onParamChanged();
             }),
-            _buildSlider(
-                'Highlight Compress', _highlightCompress, 0.5, 5.0, (v) {
+            _buildSlider('Highlight Compress', _highlightCompress, 0.5, 5.0, (
+              v,
+            ) {
               setState(() => _highlightCompress = v);
               _onParamChanged();
             }),
@@ -950,7 +973,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
           SwitchListTile(
             title: const Text('Compress Dynamic Range'),
             subtitle: const Text(
-                'Map brightness to display\'s actual white/black point'),
+              'Map brightness to display\'s actual white/black point',
+            ),
             value: _compressDynamicRange,
             contentPadding: EdgeInsets.zero,
             onChanged: (v) {
@@ -979,8 +1003,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(label, style: Theme.of(context).textTheme.bodyMedium),
-            Text(value.toStringAsFixed(2),
-                style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              value.toStringAsFixed(2),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
         Slider(

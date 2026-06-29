@@ -3,25 +3,17 @@ class Device {
   final String host;
   final int port;
 
-  const Device({
-    required this.name,
-    required this.host,
-    this.port = 80,
-  });
+  const Device({required this.name, required this.host, this.port = 80});
 
   String get baseUrl => 'http://$host:$port';
 
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'host': host,
-        'port': port,
-      };
+  Map<String, dynamic> toJson() => {'name': name, 'host': host, 'port': port};
 
   factory Device.fromJson(Map<String, dynamic> json) => Device(
-        name: json['name'] as String,
-        host: json['host'] as String,
-        port: json['port'] as int? ?? 80,
-      );
+    name: json['name'] as String,
+    host: json['host'] as String,
+    port: json['port'] as int? ?? 80,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -41,6 +33,10 @@ class SystemInfo {
   final int storageTotal;
   final int storageUsed;
 
+  /// Display color model: "gc16" (16-level grayscale), "spectra6" (6-color), or
+  /// "" for legacy firmware (treated as color).
+  final String displayType;
+
   const SystemInfo({
     required this.deviceName,
     required this.deviceId,
@@ -50,10 +46,14 @@ class SystemInfo {
     required this.displayHeight,
     required this.storageTotal,
     required this.storageUsed,
+    this.displayType = '',
   });
 
   double get storageUsedPercent =>
       storageTotal > 0 ? storageUsed / storageTotal : 0;
+
+  /// True for grayscale (GC16 and any future gc*) panels.
+  bool get isGrayscale => displayType.startsWith('gc');
 
   factory SystemInfo.fromJson(Map<String, dynamic> json) {
     return SystemInfo(
@@ -65,6 +65,7 @@ class SystemInfo {
       displayHeight: (json['height'] as num?)?.toInt() ?? 0,
       storageTotal: (json['storage_total'] as num?)?.toInt() ?? 0,
       storageUsed: (json['storage_used'] as num?)?.toInt() ?? 0,
+      displayType: json['display_type'] as String? ?? '',
     );
   }
 }
@@ -99,10 +100,7 @@ class SensorInfo {
   final double temperature;
   final double humidity;
 
-  const SensorInfo({
-    required this.temperature,
-    required this.humidity,
-  });
+  const SensorInfo({required this.temperature, required this.humidity});
 
   factory SensorInfo.fromJson(Map<String, dynamic> json) {
     return SensorInfo(

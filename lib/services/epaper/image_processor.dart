@@ -79,15 +79,9 @@ List<int> xyzToRgb(double x, double y, double z) {
   var g = x * -0.969266 + y * 1.8760108 + z * 0.041556;
   var b = x * 0.0556434 + y * -0.2040259 + z * 1.0572252;
 
-  r = r > 0.0031308
-      ? 1.055 * math.pow(r, 1.0 / 2.4) - 0.055
-      : 12.92 * r;
-  g = g > 0.0031308
-      ? 1.055 * math.pow(g, 1.0 / 2.4) - 0.055
-      : 12.92 * g;
-  b = b > 0.0031308
-      ? 1.055 * math.pow(b, 1.0 / 2.4) - 0.055
-      : 12.92 * b;
+  r = r > 0.0031308 ? 1.055 * math.pow(r, 1.0 / 2.4) - 0.055 : 12.92 * r;
+  g = g > 0.0031308 ? 1.055 * math.pow(g, 1.0 / 2.4) - 0.055 : 12.92 * g;
+  b = b > 0.0031308 ? 1.055 * math.pow(b, 1.0 / 2.4) - 0.055 : 12.92 * b;
 
   return [
     (r * 255).round().clamp(0, 255),
@@ -245,10 +239,11 @@ void applyScurveTonemap(
         final shadowVal = normalized / midpoint;
         result =
             math.pow(shadowVal, 1.0 - strength * shadowBoost).toDouble() *
-                midpoint;
+            midpoint;
       } else {
         final highlightVal = (normalized - midpoint) / (1.0 - midpoint);
-        result = midpoint +
+        result =
+            midpoint +
             math
                     .pow(highlightVal, 1.0 + strength * highlightCompress)
                     .toDouble() *
@@ -265,7 +260,11 @@ void applyScurveTonemap(
 // ============================================================
 
 int _findClosestRGB(
-    double r, double g, double b, List<List<int>> paletteArray) {
+  double r,
+  double g,
+  double b,
+  List<List<int>> paletteArray,
+) {
   var minDist = double.infinity;
   var closest = 1;
 
@@ -286,8 +285,13 @@ int _findClosestRGB(
   return closest;
 }
 
-int _findClosestLAB(double r, double g, double b,
-    List<List<int>> paletteArray, List<List<double>> paletteLab) {
+int _findClosestLAB(
+  double r,
+  double g,
+  double b,
+  List<List<int>> paletteArray,
+  List<List<double>> paletteLab,
+) {
   var minDist = double.infinity;
   var closest = 1;
   final inputLab = rgbToLab(r, g, b);
@@ -303,8 +307,14 @@ int _findClosestLAB(double r, double g, double b,
   return closest;
 }
 
-int findClosestColor(double r, double g, double b, ColorMethod method,
-    List<List<int>> paletteArray, List<List<double>>? paletteLab) {
+int findClosestColor(
+  double r,
+  double g,
+  double b,
+  ColorMethod method,
+  List<List<int>> paletteArray,
+  List<List<double>>? paletteLab,
+) {
   return method == ColorMethod.lab
       ? _findClosestLAB(r, g, b, paletteArray, paletteLab!)
       : _findClosestRGB(r, g, b, paletteArray);
@@ -376,7 +386,10 @@ void applyErrorDiffusionDither(
   // Pre-compute LAB values for dither palette if using LAB method
   final ditherPaletteLab = method == ColorMethod.lab
       ? ditherPaletteArray
-            .map((c) => rgbToLab(c[0].toDouble(), c[1].toDouble(), c[2].toDouble()))
+            .map(
+              (c) =>
+                  rgbToLab(c[0].toDouble(), c[1].toDouble(), c[2].toDouble()),
+            )
             .toList()
       : null;
 
@@ -385,15 +398,18 @@ void applyErrorDiffusionDither(
       final idx = (y * width + x) * 4;
       final errIdx = (y * width + x) * 3;
 
-      final oldR =
-          (data[idx] + errors[errIdx]).clamp(0.0, 255.0);
-      final oldG =
-          (data[idx + 1] + errors[errIdx + 1]).clamp(0.0, 255.0);
-      final oldB =
-          (data[idx + 2] + errors[errIdx + 2]).clamp(0.0, 255.0);
+      final oldR = (data[idx] + errors[errIdx]).clamp(0.0, 255.0);
+      final oldG = (data[idx + 1] + errors[errIdx + 1]).clamp(0.0, 255.0);
+      final oldB = (data[idx + 2] + errors[errIdx + 2]).clamp(0.0, 255.0);
 
       final colorIdx = findClosestColor(
-          oldR, oldG, oldB, method, ditherPaletteArray, ditherPaletteLab);
+        oldR,
+        oldG,
+        oldB,
+        method,
+        ditherPaletteArray,
+        ditherPaletteLab,
+      );
 
       final newR = outputPaletteArray[colorIdx][0];
       final newG = outputPaletteArray[colorIdx][1];
@@ -431,7 +447,10 @@ void applyErrorDiffusionDither(
 // ============================================================
 
 void preprocessImage(
-    PixelBuffer buf, ProcessingParams params, Palette perceived) {
+  PixelBuffer buf,
+  ProcessingParams params,
+  Palette perceived,
+) {
   // 1. Exposure
   if (params.exposure != 1.0) {
     applyExposure(buf, params.exposure);
@@ -459,14 +478,24 @@ void preprocessImage(
 
   // 4. Compress dynamic range to display's actual luminance range
   if (params.compressDynamicRange) {
-    final blackL = rgbToLab(perceived.black.r.toDouble(),
-        perceived.black.g.toDouble(), perceived.black.b.toDouble())[0];
-    final whiteL = rgbToLab(perceived.white.r.toDouble(),
-        perceived.white.g.toDouble(), perceived.white.b.toDouble())[0];
+    final blackL = rgbToLab(
+      perceived.black.r.toDouble(),
+      perceived.black.g.toDouble(),
+      perceived.black.b.toDouble(),
+    )[0];
+    final whiteL = rgbToLab(
+      perceived.white.r.toDouble(),
+      perceived.white.g.toDouble(),
+      perceived.white.b.toDouble(),
+    )[0];
 
     final d = buf.data;
     for (var i = 0; i < d.length; i += 4) {
-      final lab = rgbToLab(d[i].toDouble(), d[i + 1].toDouble(), d[i + 2].toDouble());
+      final lab = rgbToLab(
+        d[i].toDouble(),
+        d[i + 1].toDouble(),
+        d[i + 2].toDouble(),
+      );
       final compressedL = blackL + (lab[0] / 100) * (whiteL - blackL);
       final rgb = labToRgb(compressedL, lab[1], lab[2]);
       d[i] = rgb[0];
@@ -480,8 +509,12 @@ void preprocessImage(
 // EPDGZ output
 // ============================================================
 
-/// Map theoretical palette RGB to 4-bit palette index.
-int rgbToPaletteIndex(int r, int g, int b) {
+/// Map theoretical palette RGB to a 4-bit palette index. For grayscale (GC16)
+/// the value maps to a 0-15 gray level; otherwise to the Spectra-6 index.
+int rgbToPaletteIndex(int r, int g, int b, {bool grayscale = false}) {
+  if (grayscale) {
+    return ((r / 255.0) * 15).round().clamp(0, 15);
+  }
   if (r == 0 && g == 0 && b == 0) return 0; // Black
   if (r == 255 && g == 255 && b == 255) return 1; // White
   if (r == 255 && g == 255 && b == 0) return 2; // Yellow
@@ -492,23 +525,34 @@ int rgbToPaletteIndex(int r, int g, int b) {
 }
 
 /// Create EPDGZ (4-bit gzipped raw e-paper data) from processed pixel buffer.
-Uint8List createEpdgz(PixelBuffer buf) {
+Uint8List createEpdgz(PixelBuffer buf, {bool grayscale = false}) {
   final width = buf.width;
   final height = buf.height;
   final data = buf.data;
 
   final rawBuffer = Uint8List((width * height + 1) ~/ 2);
   var byteIdx = 0;
+  final padIndex = grayscale ? 15 : 1; // white padding
 
   for (var y = 0; y < height; y++) {
     for (var x = 0; x < width; x += 2) {
       final idx1 = (y * width + x) * 4;
-      final p1 = rgbToPaletteIndex(data[idx1], data[idx1 + 1], data[idx1 + 2]);
+      final p1 = rgbToPaletteIndex(
+        data[idx1],
+        data[idx1 + 1],
+        data[idx1 + 2],
+        grayscale: grayscale,
+      );
 
-      var p2 = 1; // default white padding
+      var p2 = padIndex;
       if (x + 1 < width) {
         final idx2 = (y * width + x + 1) * 4;
-        p2 = rgbToPaletteIndex(data[idx2], data[idx2 + 1], data[idx2 + 2]);
+        p2 = rgbToPaletteIndex(
+          data[idx2],
+          data[idx2 + 1],
+          data[idx2 + 2],
+          grayscale: grayscale,
+        );
       }
 
       rawBuffer[byteIdx++] = (p1 << 4) | (p2 & 0x0f);
@@ -605,15 +649,21 @@ PreparedImage prepareFromImage(
     case ScaleMode.fit:
       final bgColor =
           palette.theoretical[backgroundColor] ?? palette.theoretical.black;
-      final result =
-          _resizeFit(source, displayWidth, displayHeight, bgColor);
+      final result = _resizeFit(source, displayWidth, displayHeight, bgColor);
       resized = result.$1;
       bgMaskBool = result.$2;
     case ScaleMode.custom:
       final bgColor =
           palette.theoretical[backgroundColor] ?? palette.theoretical.black;
       final result = _resizeCustom(
-          source, displayWidth, displayHeight, bgColor, zoom, panX, panY);
+        source,
+        displayWidth,
+        displayHeight,
+        bgColor,
+        zoom,
+        panX,
+        panY,
+      );
       resized = result.$1;
       bgMaskBool = result.$2;
   }
@@ -646,18 +696,20 @@ Uint8List processPreview(
   String backgroundColor = 'white',
   PalettePair palette = defaultPalette,
 }) {
-  return _processInIsolate(_ProcessParams(
-    rgbaData: prepared.rgbaData,
-    width: prepared.width,
-    height: prepared.height,
-    bgMask: prepared.bgMask,
-    params: params,
-    usePerceivedOutput: true,
-    nativeWidth: prepared.width,
-    nativeHeight: prepared.height,
-    backgroundColor: backgroundColor,
-    palette: palette,
-  ));
+  return _processInIsolate(
+    _ProcessParams(
+      rgbaData: prepared.rgbaData,
+      width: prepared.width,
+      height: prepared.height,
+      bgMask: prepared.bgMask,
+      params: params,
+      usePerceivedOutput: true,
+      nativeWidth: prepared.width,
+      nativeHeight: prepared.height,
+      backgroundColor: backgroundColor,
+      palette: palette,
+    ),
+  );
 }
 
 /// Process a prepared image for device output in a background isolate.
@@ -671,7 +723,9 @@ Future<Uint8List> processForDeviceInBackground(
   String backgroundColor = 'white',
   PalettePair palette = defaultPalette,
 }) {
-  return Isolate.run(() => _processInIsolate(_ProcessParams(
+  return Isolate.run(
+    () => _processInIsolate(
+      _ProcessParams(
         rgbaData: prepared.rgbaData,
         width: prepared.width,
         height: prepared.height,
@@ -683,7 +737,9 @@ Future<Uint8List> processForDeviceInBackground(
         orientation: orientation,
         backgroundColor: backgroundColor,
         palette: palette,
-      )));
+      ),
+    ),
+  );
 }
 
 /// Encode a prepared image as a JPEG thumbnail in a background isolate.
@@ -698,13 +754,15 @@ Future<Uint8List> generateThumbnailJpegInBackground(
   int maxDimension = 400,
   int quality = 85,
 }) {
-  return Isolate.run(() => _encodeThumbnailJpeg(
-        rgbaData: prepared.rgbaData,
-        width: prepared.width,
-        height: prepared.height,
-        maxDimension: maxDimension,
-        quality: quality,
-      ));
+  return Isolate.run(
+    () => _encodeThumbnailJpeg(
+      rgbaData: prepared.rgbaData,
+      width: prepared.width,
+      height: prepared.height,
+      maxDimension: maxDimension,
+      quality: quality,
+    ),
+  );
 }
 
 Uint8List _encodeThumbnailJpeg({
@@ -720,7 +778,13 @@ Uint8List _encodeThumbnailJpeg({
     for (var x = 0; x < width; x++) {
       final i = (y * width + x) * 4;
       image.setPixelRgba(
-          x, y, rgbaData[i], rgbaData[i + 1], rgbaData[i + 2], 255);
+        x,
+        y,
+        rgbaData[i],
+        rgbaData[i + 1],
+        rgbaData[i + 2],
+        255,
+      );
     }
   }
 
@@ -745,8 +809,9 @@ dynamic _processInIsolate(_ProcessParams p) {
 
   preprocessImage(buf, p.params, p.palette.perceived);
 
-  final outputPalette =
-      p.usePerceivedOutput ? p.palette.perceived : p.palette.theoretical;
+  final outputPalette = p.usePerceivedOutput
+      ? p.palette.perceived
+      : p.palette.theoretical;
   final outputPaletteArray = outputPalette.toArray();
   final ditherPaletteArray = p.palette.perceived.toArray();
 
@@ -777,15 +842,17 @@ dynamic _processInIsolate(_ProcessParams p) {
   } else {
     // Device: rotate to native layout if needed, encode as EPDGZ
     final nativeIsLandscape = p.nativeWidth > p.nativeHeight;
-    final orientIsLandscape =
-        p.orientation == null ? nativeIsLandscape : p.orientation != 'portrait';
+    final orientIsLandscape = p.orientation == null
+        ? nativeIsLandscape
+        : p.orientation != 'portrait';
     final needsRotation = nativeIsLandscape != orientIsLandscape;
+    final grayscale = isGrayscalePalette(p.palette);
 
     if (needsRotation) {
       final rotated = img.copyRotate(buf.toImage(), angle: 90);
-      return createEpdgz(PixelBuffer.fromImage(rotated));
+      return createEpdgz(PixelBuffer.fromImage(rotated), grayscale: grayscale);
     } else {
-      return createEpdgz(buf);
+      return createEpdgz(buf, grayscale: grayscale);
     }
   }
 }
@@ -795,9 +862,12 @@ enum ScaleMode { cover, fit, custom }
 /// Resize image with "fit" mode (letterbox). Returns image + background mask.
 /// Background pixels are filled with [bgColor], mask[i]=true for background pixels.
 (img.Image, List<bool>) _resizeFit(
-    img.Image source, int outW, int outH, PaletteColor bgColor) {
-  final scale =
-      math.min(outW / source.width, outH / source.height);
+  img.Image source,
+  int outW,
+  int outH,
+  PaletteColor bgColor,
+) {
+  final scale = math.min(outW / source.width, outH / source.height);
   final scaledW = (source.width * scale).round();
   final scaledH = (source.height * scale).round();
   final offsetX = (outW - scaledW) ~/ 2;
@@ -806,16 +876,22 @@ enum ScaleMode { cover, fit, custom }
   final output = img.Image(width: outW, height: outH);
   img.fill(output, color: img.ColorUint8.rgb(bgColor.r, bgColor.g, bgColor.b));
 
-  final scaled = img.copyResize(source, width: scaledW, height: scaledH,
-      interpolation: img.Interpolation.linear);
+  final scaled = img.copyResize(
+    source,
+    width: scaledW,
+    height: scaledH,
+    interpolation: img.Interpolation.linear,
+  );
   img.compositeImage(output, scaled, dstX: offsetX, dstY: offsetY);
 
   // Build background mask
   final mask = List<bool>.filled(outW * outH, false);
   for (var y = 0; y < outH; y++) {
     for (var x = 0; x < outW; x++) {
-      if (x < offsetX || x >= offsetX + scaledW ||
-          y < offsetY || y >= offsetY + scaledH) {
+      if (x < offsetX ||
+          x >= offsetX + scaledW ||
+          y < offsetY ||
+          y >= offsetY + scaledH) {
         mask[y * outW + x] = true;
       }
     }
@@ -828,8 +904,15 @@ enum ScaleMode { cover, fit, custom }
 ///
 /// Places the source at (panX, panY) scaled to (srcW*zoom, srcH*zoom) in
 /// an outW x outH frame, clipping as needed (matching JS ctx.drawImage behavior).
-(img.Image, List<bool>) _resizeCustom(img.Image source, int outW, int outH,
-    PaletteColor bgColor, double zoom, double panX, double panY) {
+(img.Image, List<bool>) _resizeCustom(
+  img.Image source,
+  int outW,
+  int outH,
+  PaletteColor bgColor,
+  double zoom,
+  double panX,
+  double panY,
+) {
   final scaledW = (source.width * zoom).round();
   final scaledH = (source.height * zoom).round();
   final px = panX.round();
@@ -840,8 +923,12 @@ enum ScaleMode { cover, fit, custom }
 
   // Scale source, then blit with clipping (handles negative offsets and overflow)
   if (scaledW > 0 && scaledH > 0) {
-    final scaled = img.copyResize(source, width: scaledW, height: scaledH,
-      interpolation: img.Interpolation.linear);
+    final scaled = img.copyResize(
+      source,
+      width: scaledW,
+      height: scaledH,
+      interpolation: img.Interpolation.linear,
+    );
     // Compute visible region
     final srcX0 = math.max(0, -px);
     final srcY0 = math.max(0, -py);
@@ -885,8 +972,12 @@ img.Image _resizeCover(img.Image source, int outW, int outH) {
     scaledH = (source.height * outW / source.width).round();
   }
 
-  final scaled = img.copyResize(source, width: scaledW, height: scaledH,
-      interpolation: img.Interpolation.linear);
+  final scaled = img.copyResize(
+    source,
+    width: scaledW,
+    height: scaledH,
+    interpolation: img.Interpolation.linear,
+  );
   final cropX = (scaledW - outW) ~/ 2;
   final cropY = (scaledH - outH) ~/ 2;
   return img.copyCrop(scaled, x: cropX, y: cropY, width: outW, height: outH);
@@ -924,8 +1015,9 @@ ProcessResult processImage(
 
   // Determine if we need to swap processing dimensions.
   final nativeIsLandscape = nativeWidth > nativeHeight;
-  final orientIsLandscape =
-      orientation == null ? nativeIsLandscape : orientation != 'portrait';
+  final orientIsLandscape = orientation == null
+      ? nativeIsLandscape
+      : orientation != 'portrait';
   final needsRotation = nativeIsLandscape != orientIsLandscape;
 
   var displayWidth = nativeWidth;
@@ -954,7 +1046,14 @@ ProcessResult processImage(
       final bgColor =
           palette.theoretical[backgroundColor] ?? palette.theoretical.black;
       final result = _resizeCustom(
-          source, displayWidth, displayHeight, bgColor, zoom, panX, panY);
+        source,
+        displayWidth,
+        displayHeight,
+        bgColor,
+        zoom,
+        panX,
+        panY,
+      );
       resized = result.$1;
       bgMask = result.$2;
   }
@@ -969,8 +1068,9 @@ ProcessResult processImage(
   preprocessImage(buf, params, palette.perceived);
 
   // Dither
-  final outputPalette =
-      usePerceivedOutput ? palette.perceived : palette.theoretical;
+  final outputPalette = usePerceivedOutput
+      ? palette.perceived
+      : palette.theoretical;
   final outputPaletteArray = outputPalette.toArray();
   final ditherPaletteArray = palette.perceived.toArray();
 
@@ -985,8 +1085,9 @@ ProcessResult processImage(
   // Replace background pixels with clean palette color after dithering.
   // Dithering can introduce artifacts in uniform background areas.
   if (bgMask != null) {
-    final cleanPal =
-        usePerceivedOutput ? palette.perceived : palette.theoretical;
+    final cleanPal = usePerceivedOutput
+        ? palette.perceived
+        : palette.theoretical;
     final cleanBg = cleanPal[backgroundColor] ?? cleanPal.black;
     final d = buf.data;
     for (var i = 0; i < bgMask.length; i++) {
@@ -1003,12 +1104,13 @@ ProcessResult processImage(
 
   // For EPDGZ: rotate to native panel layout if needed
   Uint8List epdgz;
+  final grayscale = isGrayscalePalette(palette);
   if (needsRotation) {
     final rotated = img.copyRotate(processedImage, angle: 90);
     final outputBuf = PixelBuffer.fromImage(rotated);
-    epdgz = createEpdgz(outputBuf);
+    epdgz = createEpdgz(outputBuf, grayscale: grayscale);
   } else {
-    epdgz = createEpdgz(buf);
+    epdgz = createEpdgz(buf, grayscale: grayscale);
   }
 
   return ProcessResult(
