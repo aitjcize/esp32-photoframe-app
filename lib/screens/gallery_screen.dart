@@ -31,6 +31,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   void initState() {
     super.initState();
     Future.microtask(() async {
+      if (!mounted) return;
       final provider = context.read<DeviceProvider>();
       await provider.refreshAll();
       // Re-save device with real name from system-info
@@ -75,9 +76,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
       if (mounted) {
         setState(() => _loadingImages = false);
         if (_images.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load images: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to load images: $e')));
         }
       }
     }
@@ -89,8 +90,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
       const SnackBar(
         content: Row(
           children: [
-            SizedBox(width: 16, height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             SizedBox(width: 12),
             Text('Updating display...'),
           ],
@@ -102,16 +106,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
       await provider.rotateImage();
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Display updated')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Display updated')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -124,8 +128,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (imageBytes == null || !mounted) return;
 
     // Open the image editor with the generated image
-    final processingSettings =
-        context.read<DeviceProvider>().processingSettings;
+    final processingSettings = context
+        .read<DeviceProvider>()
+        .processingSettings;
 
     final uploaded = await Navigator.push<bool>(
       context,
@@ -177,7 +182,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (!mounted) return;
 
     // Use cached processing settings from background refresh
-    final processingSettings = context.read<DeviceProvider>().processingSettings;
+    final processingSettings = context
+        .read<DeviceProvider>()
+        .processingSettings;
 
     final uploaded = await Navigator.push<bool>(
       context,
@@ -249,7 +256,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
         content: Row(
           children: [
             SizedBox(
-              width: 16, height: 16,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             SizedBox(width: 12),
@@ -264,16 +272,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
       await provider.apiClient!.displayByPath(image.filepath);
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Display updated')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Display updated')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -307,6 +315,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
 
     if (name == null || name.trim().isEmpty) return;
+    if (!mounted) return;
 
     try {
       final provider = context.read<DeviceProvider>();
@@ -315,9 +324,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
       _selectAlbum(name.trim());
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create album: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to create album: $e')));
       }
     }
   }
@@ -330,18 +339,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              content: Text(enabled
-                  ? 'Auto-rotation enabled for "${album.name}"'
-                  : 'Auto-rotation disabled for "${album.name}"'),
+              content: Text(
+                enabled
+                    ? 'Auto-rotation enabled for "${album.name}"'
+                    : 'Auto-rotation disabled for "${album.name}"',
+              ),
               duration: const Duration(seconds: 2),
             ),
           );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update album: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update album: $e')));
       }
     }
   }
@@ -369,6 +380,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
     try {
       final provider = context.read<DeviceProvider>();
@@ -387,9 +399,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete album: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete album: $e')));
       }
     }
   }
@@ -418,6 +430,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
     final api = context.read<DeviceProvider>().apiClient;
     if (api == null) return;
@@ -432,9 +445,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
     if (mounted) {
       setState(() => _selectedImages.clear());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted $deleted image(s)')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Deleted $deleted image(s)')));
       if (_selectedAlbum != null) _selectAlbum(_selectedAlbum!);
     }
   }
@@ -453,9 +466,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
         if (mounted) {
           provider.disconnect();
           context.go('/devices');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Device went offline')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Device went offline')));
         }
       });
     }
@@ -485,8 +498,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     if (_selectedImages.length == _images.length) {
                       _selectedImages.clear();
                     } else {
-                      _selectedImages.addAll(
-                          _images.map((i) => i.filepath));
+                      _selectedImages.addAll(_images.map((i) => i.filepath));
                     }
                   }),
                   tooltip: 'Select all',
@@ -498,35 +510,36 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 ),
               ]
             : [
-          // Rotate button
-          IconButton(
-            icon: const Icon(Icons.skip_next),
-            onPressed: () => _rotateImage(),
-            tooltip: 'Next image',
-          ),
-          // Battery icon
-          if (battery != null && battery.batteryConnected)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Tooltip(
-                message: '${battery.level}% ${battery.charging ? "(charging)" : ""}',
-                child: Icon(
-                  battery.charging
-                      ? Icons.battery_charging_full
-                      : battery.level > 75
-                          ? Icons.battery_full
-                          : battery.level > 50
-                              ? Icons.battery_5_bar
-                              : battery.level > 25
-                                  ? Icons.battery_3_bar
-                                  : Icons.battery_1_bar,
-                  color: battery.level <= 20
-                      ? Theme.of(context).colorScheme.error
-                      : null,
+                // Rotate button
+                IconButton(
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: () => _rotateImage(),
+                  tooltip: 'Next image',
                 ),
-              ),
-            ),
-        ],
+                // Battery icon
+                if (battery != null && battery.batteryConnected)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Tooltip(
+                      message:
+                          '${battery.level}% ${battery.charging ? "(charging)" : ""}',
+                      child: Icon(
+                        battery.charging
+                            ? Icons.battery_charging_full
+                            : battery.level > 75
+                            ? Icons.battery_full
+                            : battery.level > 50
+                            ? Icons.battery_5_bar
+                            : battery.level > 25
+                            ? Icons.battery_3_bar
+                            : Icons.battery_1_bar,
+                        color: battery.level <= 20
+                            ? Theme.of(context).colorScheme.error
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
       ),
       body: Column(
         children: [
@@ -548,8 +561,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   album: album,
                   selected: album.name == _selectedAlbum,
                   onTap: () => _selectAlbum(album.name),
-                  onToggleEnabled: (value) =>
-                      _toggleAlbumEnabled(album, value),
+                  onToggleEnabled: (value) => _toggleAlbumEnabled(album, value),
                   onDelete: album.name == 'Default'
                       ? null
                       : () => _deleteAlbum(album.name),
@@ -565,98 +577,100 @@ class _GalleryScreenState extends State<GalleryScreen> {
             child: _loadingImages
                 ? const Center(child: CircularProgressIndicator())
                 : _images.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.photo_library_outlined,
-                                size: 48,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant),
-                            const SizedBox(height: 8),
-                            const Text('No images in this album'),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.photo_library_outlined,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () => _selectAlbum(_selectedAlbum!),
-                        child: GridView.builder(
-                          padding: const EdgeInsets.all(8),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
+                        const SizedBox(height: 8),
+                        const Text('No images in this album'),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => _selectAlbum(_selectedAlbum!),
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(8),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 3,
                             crossAxisSpacing: 4,
                             mainAxisSpacing: 4,
                           ),
-                          itemCount: _images.length,
-                          itemBuilder: (context, index) {
-                            final image = _images[index];
-                            final thumbPath = image.thumbnail != null
-                                ? '${image.album}/${image.thumbnail}'
-                                : image.filepath;
-                            final imageUrl =
-                                provider.apiClient!.getImageUrl(thumbPath);
-                            final isSelected =
-                                _selectedImages.contains(image.filepath);
-                            return GestureDetector(
-                              onTap: _isSelecting
-                                  ? () => setState(() {
-                                        if (isSelected) {
-                                          _selectedImages.remove(image.filepath);
-                                        } else {
-                                          _selectedImages.add(image.filepath);
-                                        }
-                                      })
-                                  : () => _onImageTap(image),
-                              onLongPress: () {
-                                if (!_isSelecting) {
-                                  setState(() =>
-                                      _selectedImages.add(image.filepath));
-                                }
-                              },
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  CachedNetworkImage(
+                      itemCount: _images.length,
+                      itemBuilder: (context, index) {
+                        final image = _images[index];
+                        final thumbPath = image.thumbnail != null
+                            ? '${image.album}/${image.thumbnail}'
+                            : image.filepath;
+                        final imageUrl = provider.apiClient!.getImageUrl(
+                          thumbPath,
+                        );
+                        final isSelected = _selectedImages.contains(
+                          image.filepath,
+                        );
+                        return GestureDetector(
+                          onTap: _isSelecting
+                              ? () => setState(() {
+                                  if (isSelected) {
+                                    _selectedImages.remove(image.filepath);
+                                  } else {
+                                    _selectedImages.add(image.filepath);
+                                  }
+                                })
+                              : () => _onImageTap(image),
+                          onLongPress: () {
+                            if (!_isSelecting) {
+                              setState(
+                                () => _selectedImages.add(image.filepath),
+                              );
+                            }
+                          },
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CachedNetworkImage(
                                 imageUrl: imageUrl,
                                 fit: BoxFit.cover,
                                 placeholder: (_, _) => Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                                 ),
                                 errorWidget: (_, _, _) => Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                                   child: const Icon(Icons.broken_image),
                                 ),
                               ),
                               if (isSelected)
                                 Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.3),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.3),
                                   alignment: Alignment.bottomRight,
                                   child: Padding(
                                     padding: const EdgeInsets.all(4),
                                     child: Icon(
                                       Icons.check_circle,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
                                       size: 24,
                                     ),
                                   ),
                                 ),
-                              ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -690,7 +704,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
         },
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.photo_library), label: 'Gallery'),
+            icon: Icon(Icons.photo_library),
+            label: 'Gallery',
+          ),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
@@ -721,10 +737,7 @@ class _NewAlbumButton extends StatelessWidget {
             children: [
               Icon(Icons.add, size: 18, color: scheme.onSurface),
               const SizedBox(width: 6),
-              Text(
-                'New',
-                style: TextStyle(color: scheme.onSurface),
-              ),
+              Text('New', style: TextStyle(color: scheme.onSurface)),
             ],
           ),
         ),
@@ -751,10 +764,12 @@ class _AlbumChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final borderColor =
-        selected ? scheme.primary : scheme.outline.withValues(alpha: 0.5);
-    final background =
-        selected ? scheme.primary.withValues(alpha: 0.08) : Colors.transparent;
+    final borderColor = selected
+        ? scheme.primary
+        : scheme.outline.withValues(alpha: 0.5);
+    final background = selected
+        ? scheme.primary.withValues(alpha: 0.08)
+        : Colors.transparent;
 
     return Material(
       color: background,
