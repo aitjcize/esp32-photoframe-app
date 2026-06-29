@@ -200,6 +200,44 @@ List<String> compileCard(ScheduleCard c) {
 List<String> compileCards(List<ScheduleCard> cards) =>
     cards.expand(compileCard).toList();
 
+// Backward compatibility with firmware that predates rotate_cron and still uses
+// a single rotate_interval (seconds).
+
+/// Convert a legacy rotation interval (seconds) into a single 3-field cron rule.
+/// Mirrors the firmware's cron_from_legacy_interval mapping.
+String intervalToCron(int seconds) {
+  if (seconds >= 3600 && seconds % 3600 == 0) {
+    final hours = seconds ~/ 3600;
+    if (hours <= 1) return '0 * *';
+    if (hours >= 24) return '0 0 *';
+    return '0 */$hours *';
+  }
+  if (seconds >= 60 && 3600 % seconds == 0) {
+    return '*/${seconds ~/ 60} * *';
+  }
+  return '0 * *';
+}
+
+/// Best-effort inverse: if the schedule is a single every-day interval rule,
+/// return the equivalent seconds so old firmware (which only understands
+/// rotate_interval) can still be driven. Returns null otherwise.
+int? cronToInterval(List<String> rules) {
+  if (rules.length != 1) return null;
+  final f = rules[0].trim().split(RegExp(r'\s+'));
+  if (f.length != 3) return null;
+  final min = f[0];
+  final hour = f[1];
+  final dow = f[2];
+  if (dow != '*') return null;
+  var m = RegExp(r'^\*/(\d+)$').firstMatch(min);
+  if (m != null && hour == '*') return int.parse(m.group(1)!) * 60;
+  m = RegExp(r'^\*/(\d+)$').firstMatch(hour);
+  if (min == '0' && m != null) return int.parse(m.group(1)!) * 3600;
+  if (min == '0' && hour == '*') return 3600;
+  if (min == '0' && hour == '0') return 86400;
+  return null;
+}
+
 ScheduleCard cardFromCron(String expr) {
   final card = ScheduleCard();
   final fields = expr.trim().split(RegExp(r'\s+'));

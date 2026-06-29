@@ -317,7 +317,15 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (result != null) {
-      provider.updateConfig({'rotate_cron': result});
+      final updates = <String, dynamic>{'rotate_cron': result};
+      // Also send a derived rotate_interval (when the schedule is a simple
+      // every-day interval) so older firmware that predates rotate_cron still
+      // applies it; newer firmware ignores it in favour of rotate_cron.
+      final legacyInterval = cronToInterval(result);
+      if (legacyInterval != null) {
+        updates['rotate_interval'] = legacyInterval;
+      }
+      provider.updateConfig(updates);
     }
   }
 

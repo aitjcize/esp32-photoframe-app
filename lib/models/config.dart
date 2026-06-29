@@ -1,3 +1,5 @@
+import '../services/cron.dart';
+
 class DeviceConfig {
   // General
   final String deviceName;
@@ -9,7 +11,7 @@ class DeviceConfig {
 
   // Auto Rotate
   final bool autoRotate;
-  final List<String> rotateCron; // standard 5-field cron expressions
+  final List<String> rotateCron; // 3-field cron rules: "minute hour day-of-week"
   final String rotationMode; // "storage" or "url"
   final String sdRotationMode; // "sequential" or "random"
   final String imageUrl;
@@ -69,10 +71,14 @@ class DeviceConfig {
       timezone: json['timezone'] as String? ?? '',
       ntpServer: json['ntp_server'] as String? ?? '',
       autoRotate: json['auto_rotate'] as bool? ?? false,
+      // Prefer rotate_cron; fall back to a legacy rotate_interval (older
+      // firmware) so the schedule still shows correctly, else the default.
       rotateCron: (json['rotate_cron'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
-          const ['0 */12 *'],
+          (json['rotate_interval'] is num
+              ? [intervalToCron((json['rotate_interval'] as num).toInt())]
+              : const ['0 */12 *']),
       rotationMode: json['rotation_mode'] as String? ?? 'storage',
       sdRotationMode: json['sd_rotation_mode'] as String? ?? 'sequential',
       imageUrl: json['image_url'] as String? ?? '',
