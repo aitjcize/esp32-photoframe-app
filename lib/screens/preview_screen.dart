@@ -219,13 +219,13 @@ class _PreviewScreenState extends State<PreviewScreen> {
   PalettePair get _palette {
     if (!_isGrayscale) return defaultPalette;
     final provider = context.read<DeviceProvider>();
-    final blackY = provider.grayBlackY;
-    final whiteY = provider.grayWhiteY;
-    if (blackY == null || whiteY == null) return grayscale16;
-    final gamma = provider.grayGamma;
-    return gamma == null
-        ? makeGrayscale16(blackY: blackY, whiteY: whiteY)
-        : makeGrayscale16(blackY: blackY, whiteY: whiteY, gamma: gamma);
+    // makeGrayscale16 defaults each endpoint independently, so any subset the
+    // device reports is honored and the rest fall back to the package defaults.
+    return makeGrayscale16(
+      blackY: provider.grayBlackY,
+      whiteY: provider.grayWhiteY,
+      gamma: provider.grayGamma,
+    );
   }
 
   /// Get the effective display dimensions (accounting for orientation swap).
@@ -879,7 +879,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
           Wrap(
             spacing: 8,
             children: [
-              ...presets.keys.map(
+              // Color presets differ mainly by saturation, which GC16 panels
+              // ignore -- so on grayscale only the (calibrated) grayscale preset
+              // is meaningful; the rest would look identical.
+              ...(_isGrayscale ? const ['grayscale'] : presets.keys).map(
                 (name) => FilterChip(
                   label: Text(name[0].toUpperCase() + name.substring(1)),
                   selected: _presetName == name,

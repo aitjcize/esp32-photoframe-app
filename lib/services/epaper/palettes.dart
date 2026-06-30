@@ -177,16 +177,14 @@ const _grayscaleTheoretical = Palette(
 /// perceived   = the panel's compressed luminance (drives dithering + dynamic-
 /// range compression); the black/white aliases keep the background + CDR code
 /// (which reads palette.black/white) working.
-PalettePair makeGrayscale16({
-  double blackY = _grayBlackY,
-  double whiteY = _grayWhiteY,
-  double gamma = _grayGamma,
-}) {
+PalettePair makeGrayscale16({double? blackY, double? whiteY, double? gamma}) {
+  // Each endpoint defaults independently, so a device that reports only some of
+  // them (e.g. gamma without the Y endpoints) still has the rest filled in.
   final perceivedGrays = _buildCalibratedGrayRamp(
-    _lstarFromY(blackY),
-    _lstarFromY(whiteY),
+    _lstarFromY(blackY ?? _grayBlackY),
+    _lstarFromY(whiteY ?? _grayWhiteY),
     16,
-    gamma,
+    gamma ?? _grayGamma,
   );
   final first = perceivedGrays.first;
   final last = perceivedGrays.last;
