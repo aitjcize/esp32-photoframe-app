@@ -119,7 +119,8 @@ const _gray16Ramp = [
 
 /// Default measured relative luminance (Y, 0..1) of a GC16 panel's full
 /// black / full white. A device that reports its own endpoints overrides these.
-const _grayBlackY = 0.02;
+/// black=0 keeps shadows at pure black (CDR compresses only the white end).
+const _grayBlackY = 0.0;
 const _grayWhiteY = 0.90;
 
 /// CIE L* (0..100) from a relative luminance Y (0..1).
