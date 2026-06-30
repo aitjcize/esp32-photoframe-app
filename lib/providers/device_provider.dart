@@ -34,6 +34,15 @@ class DeviceProvider extends ChangeNotifier {
   Map<String, dynamic>? get processingSettings => _processingSettings;
   Map<String, dynamic>? get paletteSettings => _paletteSettings;
 
+  /// Relative luminance (Y, 0..1) of the panel's full black, as reported by a
+  /// GC16 device's palette response (`{"black_y": ...}`). Null when absent or
+  /// when the panel is color (the palette response carries a grays array
+  /// instead). Drives the calibrated grayscale preview ramp.
+  double? get grayBlackY => (_paletteSettings?['black_y'] as num?)?.toDouble();
+
+  /// Relative luminance (Y, 0..1) of the panel's full white. See [grayBlackY].
+  double? get grayWhiteY => (_paletteSettings?['white_y'] as num?)?.toDouble();
+
   Device? get device => _device;
   ApiClient? get apiClient => _apiClient;
   SystemInfo? get systemInfo => _systemInfo;
@@ -67,8 +76,7 @@ class DeviceProvider extends ChangeNotifier {
       }
     }
 
-    _apiClient = ApiClient(
-        baseUrl: 'http://$apiHost:${device.port}');
+    _apiClient = ApiClient(baseUrl: 'http://$apiHost:${device.port}');
     _error = null;
     _keepAliveFailures = 0;
     _deviceOffline = false;
@@ -143,12 +151,9 @@ class DeviceProvider extends ChangeNotifier {
     if (_apiClient == null) return;
     try {
       final results = await Future.wait([
-        _apiClient!.getProcessingSettings()
-            .timeout(const Duration(seconds: 5)),
-        _apiClient!.getPaletteSettings()
-            .timeout(const Duration(seconds: 5)),
-        _apiClient!.getConfig()
-            .timeout(const Duration(seconds: 5)),
+        _apiClient!.getProcessingSettings().timeout(const Duration(seconds: 5)),
+        _apiClient!.getPaletteSettings().timeout(const Duration(seconds: 5)),
+        _apiClient!.getConfig().timeout(const Duration(seconds: 5)),
       ]);
       _processingSettings = results[0] as Map<String, dynamic>;
       _paletteSettings = results[1] as Map<String, dynamic>;
@@ -319,8 +324,9 @@ class DeviceProvider extends ChangeNotifier {
       final json = prefs.getStringList('${_cachePrefix}_images_$album');
       if (json != null) {
         return json
-            .map((s) =>
-                PhotoInfo.fromJson(jsonDecode(s) as Map<String, dynamic>))
+            .map(
+              (s) => PhotoInfo.fromJson(jsonDecode(s) as Map<String, dynamic>),
+            )
             .toList();
       }
     } catch (_) {}
@@ -332,11 +338,13 @@ class DeviceProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = images
-          .map((i) => jsonEncode({
-                'filename': i.filename,
-                'album': i.album,
-                'thumbnail': i.thumbnail,
-              }))
+          .map(
+            (i) => jsonEncode({
+              'filename': i.filename,
+              'album': i.album,
+              'thumbnail': i.thumbnail,
+            }),
+          )
           .toList();
       await prefs.setStringList('${_cachePrefix}_images_$album', json);
     } catch (_) {}

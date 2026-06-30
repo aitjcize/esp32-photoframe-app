@@ -213,8 +213,17 @@ class _PreviewScreenState extends State<PreviewScreen> {
       context.read<DeviceProvider>().systemInfo?.isGrayscale ?? false;
 
   /// Palette to process with: the 16-level gray ramp for grayscale panels,
-  /// otherwise the default 6-color Spectra palette.
-  PalettePair get _palette => _isGrayscale ? grayscale16 : defaultPalette;
+  /// otherwise the default 6-color Spectra palette. For grayscale panels the
+  /// perceived ramp is calibrated to the device's measured luminance endpoints
+  /// (falling back to the package defaults when the device doesn't report them).
+  PalettePair get _palette {
+    if (!_isGrayscale) return defaultPalette;
+    final provider = context.read<DeviceProvider>();
+    final blackY = provider.grayBlackY;
+    final whiteY = provider.grayWhiteY;
+    if (blackY == null || whiteY == null) return grayscale16;
+    return makeGrayscale16(blackY: blackY, whiteY: whiteY);
+  }
 
   /// Get the effective display dimensions (accounting for orientation swap).
   (int, int) get _displayDims {

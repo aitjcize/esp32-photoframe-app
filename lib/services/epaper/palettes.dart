@@ -4,6 +4,8 @@
 // - theoretical: Pure RGB values for device output (what gets sent to the display)
 // - perceived: Actual RGB values as measured on screen (for dithering calculations)
 
+import 'dart:math' as math;
+
 class PaletteColor {
   final int r, g, b;
   const PaletteColor(this.r, this.g, this.b);
@@ -94,7 +96,8 @@ const spectra6 = PalettePair(
 
 const defaultPalette = spectra6;
 
-/// 16-level grayscale ramp ([r,g,b] per level, 255/15 == 17 step).
+/// 16-level theoretical (device-output) gray ramp ([r,g,b] per level,
+/// 255/15 == 17 step). Level index i maps directly to nibble i.
 const _gray16Ramp = [
   [0, 0, 0],
   [17, 17, 17],
@@ -114,7 +117,38 @@ const _gray16Ramp = [
   [255, 255, 255],
 ];
 
-const _grayscalePalette = Palette(
+/// Default measured relative luminance (Y, 0..1) of a GC16 panel's full
+/// black / full white. A device that reports its own endpoints overrides these.
+const _grayBlackY = 0.02;
+const _grayWhiteY = 0.90;
+
+/// CIE L* (0..100) from a relative luminance Y (0..1).
+double _lstarFromY(double y) =>
+    y > 0.008856 ? 116 * math.pow(y, 1 / 3) - 16 : 903.3 * y;
+
+/// 8-bit sRGB neutral gray for a CIE L*.
+int _grayFromLstar(double l) {
+  final y = l > 8 ? math.pow((l + 16) / 116, 3).toDouble() : l / 903.3;
+  final s = y <= 0.0031308 ? 12.92 * y : 1.055 * math.pow(y, 1 / 2.4) - 0.055;
+  return (s * 255).round().clamp(0, 255);
+}
+
+/// Perceptually-even (linear in L*) gray ramp between the measured endpoints.
+List<List<int>> _buildCalibratedGrayRamp(
+  double blackL,
+  double whiteL,
+  int levels,
+) {
+  final grays = <List<int>>[];
+  for (var i = 0; i < levels; i++) {
+    final l = blackL + (i / (levels - 1)) * (whiteL - blackL);
+    final v = _grayFromLstar(l);
+    grays.add([v, v, v]);
+  }
+  return grays;
+}
+
+const _grayscaleTheoretical = Palette(
   black: PaletteColor(0, 0, 0),
   white: PaletteColor(255, 255, 255),
   // Color entries are unused on a grayscale panel; set to mid-gray.
@@ -125,11 +159,42 @@ const _grayscalePalette = Palette(
   grays: _gray16Ramp,
 );
 
-/// Grayscale (GC16 / IT8951) — 16-level gray ramp. theoretical == perceived.
-const grayscale16 = PalettePair(
-  theoretical: _grayscalePalette,
-  perceived: _grayscalePalette,
-);
+/// Build a 16-level grayscale (GC16) palette from two measured luminance
+/// endpoints. The perceived ramp is *derived* (L* interpolation -> sRGB), so
+/// only the two endpoints need to be measured/transported — a device reports
+/// its Y_black / Y_white and everyone (CLI, webapp, app) derives the same ramp.
+///
+/// theoretical = the device output ramp (0..255, level i -> nibble i).
+/// perceived   = the panel's compressed luminance (drives dithering + dynamic-
+/// range compression); the black/white aliases keep the background + CDR code
+/// (which reads palette.black/white) working.
+PalettePair makeGrayscale16({
+  double blackY = _grayBlackY,
+  double whiteY = _grayWhiteY,
+}) {
+  final perceivedGrays = _buildCalibratedGrayRamp(
+    _lstarFromY(blackY),
+    _lstarFromY(whiteY),
+    16,
+  );
+  final first = perceivedGrays.first;
+  final last = perceivedGrays.last;
+  final perceived = Palette(
+    black: PaletteColor(first[0], first[1], first[2]),
+    white: PaletteColor(last[0], last[1], last[2]),
+    yellow: const PaletteColor(128, 128, 128),
+    red: const PaletteColor(128, 128, 128),
+    blue: const PaletteColor(128, 128, 128),
+    green: const PaletteColor(128, 128, 128),
+    grays: perceivedGrays,
+  );
+  return PalettePair(theoretical: _grayscaleTheoretical, perceived: perceived);
+}
+
+/// Grayscale (GC16 / IT8951) — 16-level gray ramp with a calibrated (default
+/// endpoint) perceived ramp. Use [makeGrayscale16] with a device's measured
+/// endpoints for a panel-accurate preview.
+final grayscale16 = makeGrayscale16();
 
 /// True if [pair] is a grayscale (GC16) palette.
 bool isGrayscalePalette(PalettePair pair) => pair.theoretical.grays != null;
