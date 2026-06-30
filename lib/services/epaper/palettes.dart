@@ -123,6 +123,11 @@ const _gray16Ramp = [
 const _grayBlackY = 0.0;
 const _grayWhiteY = 0.90;
 
+/// Default grayscale gamma. 1.0 = perceptually linear ramp (current behavior);
+/// >1 darkens mid-tones, <1 lightens. A device that reports its own gamma
+/// overrides this.
+const _grayGamma = 1.0;
+
 /// CIE L* (0..100) from a relative luminance Y (0..1).
 double _lstarFromY(double y) =>
     y > 0.008856 ? 116 * math.pow(y, 1 / 3) - 16 : 903.3 * y;
@@ -138,11 +143,14 @@ int _grayFromLstar(double l) {
 List<List<int>> _buildCalibratedGrayRamp(
   double blackL,
   double whiteL,
-  int levels,
-) {
+  int levels, [
+  double gamma = 1.0,
+]) {
   final grays = <List<int>>[];
   for (var i = 0; i < levels; i++) {
-    final l = blackL + (i / (levels - 1)) * (whiteL - blackL);
+    final t = i / (levels - 1);
+    final shaped = gamma == 1 ? t : math.pow(t, gamma).toDouble();
+    final l = blackL + shaped * (whiteL - blackL);
     final v = _grayFromLstar(l);
     grays.add([v, v, v]);
   }
@@ -172,11 +180,13 @@ const _grayscaleTheoretical = Palette(
 PalettePair makeGrayscale16({
   double blackY = _grayBlackY,
   double whiteY = _grayWhiteY,
+  double gamma = _grayGamma,
 }) {
   final perceivedGrays = _buildCalibratedGrayRamp(
     _lstarFromY(blackY),
     _lstarFromY(whiteY),
     16,
+    gamma,
   );
   final first = perceivedGrays.first;
   final last = perceivedGrays.last;

@@ -43,6 +43,12 @@ class DeviceProvider extends ChangeNotifier {
   /// Relative luminance (Y, 0..1) of the panel's full white. See [grayBlackY].
   double? get grayWhiteY => (_paletteSettings?['white_y'] as num?)?.toDouble();
 
+  /// Per-panel grayscale gamma shaping the mid-level perceived ramp, as reported
+  /// by a GC16 device's palette response (`{"gamma": ...}`). 1.0 = perceptually
+  /// linear; >1 darkens mid-tones, <1 lightens. Null when absent. See
+  /// [grayBlackY].
+  double? get grayGamma => (_paletteSettings?['gamma'] as num?)?.toDouble();
+
   Device? get device => _device;
   ApiClient? get apiClient => _apiClient;
   SystemInfo? get systemInfo => _systemInfo;

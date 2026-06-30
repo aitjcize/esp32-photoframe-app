@@ -222,7 +222,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
     final blackY = provider.grayBlackY;
     final whiteY = provider.grayWhiteY;
     if (blackY == null || whiteY == null) return grayscale16;
-    return makeGrayscale16(blackY: blackY, whiteY: whiteY);
+    final gamma = provider.grayGamma;
+    return gamma == null
+        ? makeGrayscale16(blackY: blackY, whiteY: whiteY)
+        : makeGrayscale16(blackY: blackY, whiteY: whiteY, gamma: gamma);
   }
 
   /// Get the effective display dimensions (accounting for orientation swap).
