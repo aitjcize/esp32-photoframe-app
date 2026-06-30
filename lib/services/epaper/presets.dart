@@ -100,7 +100,7 @@ const soft = ProcessingParams(
 const grayscale = ProcessingParams(
   saturation: 0.0,
   toneMode: ToneMode.contrast,
-  contrast: 1.0,
+  contrast: 1.1,
   colorMethod: ColorMethod.lab,
 );
 
