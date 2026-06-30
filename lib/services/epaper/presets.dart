@@ -99,11 +99,8 @@ const soft = ProcessingParams(
 /// Grayscale — LAB color space for B&W photos.
 const grayscale = ProcessingParams(
   saturation: 0.0,
-  toneMode: ToneMode.scurve,
-  strength: 0.8,
-  shadowBoost: 0.1,
-  highlightCompress: 1.4,
-  midpoint: 0.5,
+  toneMode: ToneMode.contrast,
+  contrast: 1.0,
   colorMethod: ColorMethod.lab,
 );
 
