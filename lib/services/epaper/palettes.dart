@@ -120,13 +120,13 @@ const _gray16Ramp = [
 /// Default measured relative luminance (Y, 0..1) of a GC16 panel's full
 /// black / full white. A device that reports its own endpoints overrides these.
 /// black=0 keeps shadows at pure black (CDR compresses only the white end).
-const _grayBlackY = 0.0;
-const _grayWhiteY = 0.90;
+const _grayBlackY = 0.009;
+const _grayWhiteY = 0.65;
 
 /// Default grayscale gamma. 1.0 = perceptually linear ramp (current behavior);
 /// >1 darkens mid-tones, <1 lightens. A device that reports its own gamma
 /// overrides this.
-const _grayGamma = 1.0;
+const _grayGamma = 1.42;
 
 /// CIE L* (0..100) from a relative luminance Y (0..1).
 double _lstarFromY(double y) =>
