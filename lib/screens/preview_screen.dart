@@ -879,10 +879,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
           Wrap(
             spacing: 8,
             children: [
-              // Color presets differ mainly by saturation, which GC16 panels
-              // ignore -- so on grayscale only the (calibrated) grayscale preset
-              // is meaningful; the rest would look identical.
-              ...(_isGrayscale ? const ['grayscale'] : presets.keys).map(
+              // Show every preset regardless of panel type (matching the web
+              // app): grayscale frames just default to the grayscale preset, but
+              // the others stay available -- they also differ in contrast, tone,
+              // and exposure, which GC16 panels do render.
+              ...presets.keys.map(
                 (name) => FilterChip(
                   label: Text(name[0].toUpperCase() + name.substring(1)),
                   selected: _presetName == name,
