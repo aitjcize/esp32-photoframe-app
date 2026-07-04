@@ -282,33 +282,45 @@ ScheduleCard cardFromCron(String expr) {
 
   final stepMin = RegExp(r'^\*/(\d+)$').firstMatch(minF);
   final stepHour = RegExp(r'^(?:\*|(\d+)-(\d+))/(\d+)$').firstMatch(hourF);
+  final rangeHour = RegExp(r'^(\d+)-(\d+)$').firstMatch(hourF);
 
-  if (stepMin != null &&
-      (hourF == '*' || RegExp(r'^\d+-\d+$').hasMatch(hourF))) {
+  // Minutes interval: "*/n" (or plain "*" = every minute) with an hour window
+  if ((stepMin != null || minF == '*') && (hourF == '*' || rangeHour != null)) {
     card.mode = 'interval';
     card.unit = 'minutes';
-    card.every = int.parse(stepMin.group(1)!);
-    if (hourF == '*') {
+    card.every = stepMin != null ? int.parse(stepMin.group(1)!) : 1;
+    if (rangeHour != null) {
+      card.fromHour = int.parse(rangeHour.group(1)!);
+      card.toHour = int.parse(rangeHour.group(2)!);
+    } else {
       card.fromHour = 0;
       card.toHour = 23;
-    } else {
-      final hp = hourF.split('-');
-      card.fromHour = int.parse(hp[0]);
-      card.toHour = int.parse(hp[1]);
     }
     return card;
   }
 
-  if (minF == '0' && stepHour != null) {
+  // Hours interval: "0 * *" (hourly), "0 */n *", "0 a-b/n *" or "0 a-b *"
+  if (minF == '0' && (hourF == '*' || stepHour != null || rangeHour != null)) {
     card.mode = 'interval';
     card.unit = 'hours';
-    card.every = int.parse(stepHour.group(3)!);
-    card.fromHour = stepHour.group(1) != null
-        ? int.parse(stepHour.group(1)!)
-        : 0;
-    card.toHour = stepHour.group(2) != null
-        ? int.parse(stepHour.group(2)!)
-        : 23;
+    if (stepHour != null) {
+      card.every = int.parse(stepHour.group(3)!);
+      card.fromHour = stepHour.group(1) != null
+          ? int.parse(stepHour.group(1)!)
+          : 0;
+      card.toHour = stepHour.group(2) != null
+          ? int.parse(stepHour.group(2)!)
+          : 23;
+    } else {
+      card.every = 1;
+      if (rangeHour != null) {
+        card.fromHour = int.parse(rangeHour.group(1)!);
+        card.toHour = int.parse(rangeHour.group(2)!);
+      } else {
+        card.fromHour = 0;
+        card.toHour = 23;
+      }
+    }
     return card;
   }
 

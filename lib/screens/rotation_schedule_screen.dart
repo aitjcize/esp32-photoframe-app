@@ -169,12 +169,19 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
               'No upcoming rotations for this schedule.',
               style: TextStyle(color: Colors.grey),
             )
-          else
+          else ...[
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [for (final r in upcoming) Chip(label: Text(r))],
             ),
+            const SizedBox(height: 6),
+            Text(
+              "Times shown in this phone's timezone; the device follows its own "
+              'timezone setting.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
@@ -215,9 +222,21 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
                 child: TextButton(
                   onPressed: () => setState(() {
                     if (card.raw == null) {
-                      card.raw = compileCard(card).first;
+                      final rules = compileCard(card);
+                      card.raw = rules.isNotEmpty ? rules.first : '0 */12 *';
+                      // A times card with several distinct minutes compiles to
+                      // several rules; split the extras into their own advanced
+                      // cards so none are lost.
+                      if (rules.length > 1) {
+                        _cards.insertAll(
+                          idx + 1,
+                          rules.skip(1).map((r) => ScheduleCard(raw: r)),
+                        );
+                      }
                     } else {
-                      card.raw = null;
+                      // Re-derive the builder state from the edited expression
+                      // when possible; unmappable ones stay in advanced mode.
+                      _cards[idx] = cardFromCron(card.raw!);
                     }
                   }),
                   child: Text(
@@ -304,7 +323,9 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
                     onSelected: (sel) => setState(() {
                       if (sel) {
                         card.customDays.add(d);
-                      } else {
+                      } else if (card.customDays.length > 1) {
+                        // Keep at least one day — an empty set compiles to
+                        // "every day", the opposite of the apparent intent.
                         card.customDays.remove(d);
                       }
                     }),
@@ -339,6 +360,7 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
   }
 
   Widget _buildInterval(ScheduleCard card) {
+    final everyItems = _everyItemsFor(card.unit, card.every);
     return Wrap(
       spacing: 12,
       runSpacing: 8,
@@ -346,10 +368,10 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
       children: [
         _dropdown<int>(
           label: 'Every',
-          value: _everyItems(card.unit).contains(card.every)
+          value: everyItems.contains(card.every)
               ? card.every
-              : _everyItems(card.unit).first,
-          items: {for (final v in _everyItems(card.unit)) v: '$v'},
+              : everyItems.first,
+          items: {for (final v in everyItems) v: '$v'},
           onChanged: (v) => setState(() => card.every = v),
         ),
         _dropdown<String>(
@@ -365,13 +387,17 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
             for (var h = 0; h < 24; h++)
               h: '${h.toString().padLeft(2, '0')}:00',
           },
-          onChanged: (v) => setState(() => card.fromHour = v),
+          onChanged: (v) => setState(() {
+            // The device can't express a window that wraps past midnight.
+            card.fromHour = v;
+            if (card.toHour < v) card.toHour = v;
+          }),
         ),
         _dropdown<int>(
           label: 'To',
           value: card.toHour,
           items: {
-            for (var h = 0; h < 24; h++)
+            for (var h = card.fromHour; h < 24; h++)
               h: '${h.toString().padLeft(2, '0')}:00',
           },
           onChanged: (v) => setState(() => card.toHour = v),
