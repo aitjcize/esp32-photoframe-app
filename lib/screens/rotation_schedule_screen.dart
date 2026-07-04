@@ -98,6 +98,11 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
     return '$dow ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
+  // The device rejects the whole config on any invalid rule or a rule set
+  // over the 7-rule budget, so only allow saving a schedule it will accept.
+  bool get _canSave =>
+      _compiled.isNotEmpty && _totalRules <= 7 && _compiled.every(isValidCron);
+
   @override
   Widget build(BuildContext context) {
     final upcoming = nextRuns(
@@ -111,7 +116,7 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
         title: const Text('Rotation Schedule'),
         actions: [
           TextButton(
-            onPressed: _totalRules <= 7
+            onPressed: _canSave
                 ? () => Navigator.pop(context, _compiled)
                 : null,
             child: const Text('Save'),

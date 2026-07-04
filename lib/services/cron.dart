@@ -16,13 +16,15 @@ class CronRule {
 const _ranges = [
   [0, 59], // minute
   [0, 23], // hour
-  [0, 6], // day of week
+  [0, 7], // day of week (0 and 7 both mean Sunday, as in Vixie cron)
 ];
 
-final _termRe = RegExp(r'^(\*|\d+)(?:-(\d+))?(?:/(\d+))?$');
+// A range may only follow a number, never '*' (the firmware rejects "*-5").
+final _termRe = RegExp(r'^(?:\*|(\d+)(?:-(\d+))?)(?:/(\d+))?$');
 
 Set<int>? _parseField(String field, int lo, int hi, bool isDow) {
-  if (field.isEmpty) return null;
+  // The firmware caps each field at 31 chars (cron.c fields[3][32]).
+  if (field.isEmpty || field.length > 31) return null;
   final out = <int>{};
   for (final term in field.split(',')) {
     final m = _termRe.firstMatch(term);
@@ -30,7 +32,8 @@ Set<int>? _parseField(String field, int lo, int hi, bool isDow) {
     int start;
     int end;
     var step = 1;
-    if (m.group(1) == '*') {
+    if (m.group(1) == null) {
+      // '*'
       start = lo;
       end = hi;
     } else {
@@ -42,20 +45,24 @@ Set<int>? _parseField(String field, int lo, int hi, bool isDow) {
       step = int.parse(m.group(3)!);
       if (step <= 0) return null;
     }
-    if (isDow) {
-      if (start == 7) start = 0;
-      if (end == 7) end = 0;
-    }
     if (start < lo || end > hi || start > end) return null;
     for (var v = start; v <= end; v += step) {
       out.add(v);
     }
   }
+  // Day-of-week: 7 is an alias for Sunday (Vixie semantics), valid anywhere
+  // including range ends, so "5-7" = Fri-Sun and "0-7" = every day.
+  if (isDow && out.remove(7)) out.add(0);
   return out;
 }
 
 CronRule? parseCron(String expr) {
-  final fields = expr.trim().split(RegExp(r'\s+'));
+  // The firmware rejects rules of 64+ chars (CRON_RULE_MAX_LEN) and splits
+  // fields only on spaces/tabs.
+  if (expr.length >= 64) return null;
+  final fields = expr
+      .replaceAll(RegExp(r'^[ \t]+|[ \t]+$'), '')
+      .split(RegExp(r'[ \t]+'));
   if (fields.length != 3) return null;
   final sets = <Set<int>>[];
   for (var i = 0; i < 3; i++) {
@@ -94,8 +101,12 @@ const _horizonMin = 8 * 24 * 60;
 /// Next [count] rotation times from [from], across all cron [exprs], applying an
 /// optional quiet-hours mask. Mirrors the firmware scan (minute granularity,
 /// <60s drift guard).
-List<DateTime> nextRuns(List<String> exprs,
-    {DateTime? from, int count = 5, QuietHours? sleep}) {
+List<DateTime> nextRuns(
+  List<String> exprs, {
+  DateTime? from,
+  int count = 5,
+  QuietHours? sleep,
+}) {
   final rules = exprs.map(parseCron).whereType<CronRule>().toList();
   if (rules.isEmpty) return [];
   final base = from ?? DateTime.now();
@@ -104,7 +115,9 @@ List<DateTime> nextRuns(List<String> exprs,
   final runs = <DateTime>[];
   for (var i = 0; i < _horizonMin && runs.length < count; i++) {
     final d = DateTime.fromMillisecondsSinceEpoch(startMs + i * 60000);
-    if (d.millisecondsSinceEpoch - t0 < 60000) continue;
+    // No minimum-delay guard: rotations never run ahead of their scheduled
+    // minute (the firmware scans from the next whole minute), so an imminent
+    // match is a legitimate target — mirror that here.
     if (!rules.any((r) => _matches(r, d))) continue;
     if (_inQuiet(d, sleep)) continue;
     runs.add(d);
@@ -137,8 +150,8 @@ class ScheduleCard {
     this.toHour = 23,
     List<String>? times,
     this.raw,
-  })  : customDays = customDays ?? <int>{1, 2, 3, 4, 5},
-        times = times ?? <String>['08:00'];
+  }) : customDays = customDays ?? <int>{1, 2, 3, 4, 5},
+       times = times ?? <String>['08:00'];
 }
 
 String _daysToCron(ScheduleCard c) {
@@ -257,7 +270,7 @@ ScheduleCard cardFromCron(String expr) {
   } else if (dowF == '0,6' || dowF == '6,0') {
     card.daysMode = 'weekends';
   } else {
-    final set = _parseField(dowF, 0, 6, true);
+    final set = _parseField(dowF, 0, 7, true);
     card.daysMode = 'custom';
     card.customDays = set ?? {1, 2, 3, 4, 5};
   }
@@ -285,10 +298,12 @@ ScheduleCard cardFromCron(String expr) {
     card.mode = 'interval';
     card.unit = 'hours';
     card.every = int.parse(stepHour.group(3)!);
-    card.fromHour =
-        stepHour.group(1) != null ? int.parse(stepHour.group(1)!) : 0;
-    card.toHour =
-        stepHour.group(2) != null ? int.parse(stepHour.group(2)!) : 23;
+    card.fromHour = stepHour.group(1) != null
+        ? int.parse(stepHour.group(1)!)
+        : 0;
+    card.toHour = stepHour.group(2) != null
+        ? int.parse(stepHour.group(2)!)
+        : 23;
     return card;
   }
 
