@@ -196,42 +196,45 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ],
 
-                // === Sleep Schedule ===
-                _SectionHeader('Sleep Schedule'),
-                SwitchListTile(
-                  title: const Text('Sleep Schedule'),
-                  subtitle: config.sleepScheduleEnabled
-                      ? Text(
-                          '${_formatMinutes(config.sleepScheduleStart)} \u2013 ${_formatMinutes(config.sleepScheduleEnd)}',
-                        )
-                      : const Text('Disabled'),
-                  value: config.sleepScheduleEnabled,
-                  onChanged: (v) =>
-                      provider.updateConfig({'sleep_schedule_enabled': v}),
-                ),
-                if (config.sleepScheduleEnabled) ...[
-                  ListTile(
-                    title: const Text('Sleep From'),
-                    subtitle: Text(_formatMinutes(config.sleepScheduleStart)),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _pickTime(
-                      context,
-                      provider,
-                      'sleep_schedule_start',
-                      config.sleepScheduleStart,
-                    ),
+                // === Sleep Schedule (legacy quiet-hours, pre-cron firmware
+                // only; cron firmware bounds the active hours in the rules) ===
+                if (!config.supportsCron) ...[
+                  _SectionHeader('Sleep Schedule'),
+                  SwitchListTile(
+                    title: const Text('Sleep Schedule'),
+                    subtitle: config.sleepScheduleEnabled
+                        ? Text(
+                            '${_formatMinutes(config.sleepScheduleStart)} \u2013 ${_formatMinutes(config.sleepScheduleEnd)}',
+                          )
+                        : const Text('Disabled'),
+                    value: config.sleepScheduleEnabled,
+                    onChanged: (v) =>
+                        provider.updateConfig({'sleep_schedule_enabled': v}),
                   ),
-                  ListTile(
-                    title: const Text('Sleep Until'),
-                    subtitle: Text(_formatMinutes(config.sleepScheduleEnd)),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _pickTime(
-                      context,
-                      provider,
-                      'sleep_schedule_end',
-                      config.sleepScheduleEnd,
+                  if (config.sleepScheduleEnabled) ...[
+                    ListTile(
+                      title: const Text('Sleep From'),
+                      subtitle: Text(_formatMinutes(config.sleepScheduleStart)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _pickTime(
+                        context,
+                        provider,
+                        'sleep_schedule_start',
+                        config.sleepScheduleStart,
+                      ),
                     ),
-                  ),
+                    ListTile(
+                      title: const Text('Sleep Until'),
+                      subtitle: Text(_formatMinutes(config.sleepScheduleEnd)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _pickTime(
+                        context,
+                        provider,
+                        'sleep_schedule_end',
+                        config.sleepScheduleEnd,
+                      ),
+                    ),
+                  ],
                 ],
 
                 // === Power ===
@@ -390,7 +393,9 @@ class SettingsScreen extends StatelessWidget {
     DeviceProvider provider,
     DeviceConfig config,
   ) async {
-    final sleep = config.sleepScheduleEnabled
+    // Quiet hours only apply on pre-cron firmware; cron schedules bound their
+    // own active hours, so the preview isn't masked for them.
+    final sleep = !config.supportsCron && config.sleepScheduleEnabled
         ? QuietHours(true, config.sleepScheduleStart, config.sleepScheduleEnd)
         : null;
     final result = await Navigator.of(context).push<List<String>>(
