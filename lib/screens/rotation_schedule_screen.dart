@@ -7,7 +7,15 @@ import '../services/cron.dart';
 class RotationScheduleScreen extends StatefulWidget {
   final List<String> initial;
   final QuietHours? sleep;
-  const RotationScheduleScreen({super.key, required this.initial, this.sleep});
+  // False when the device runs pre-cron firmware, which only understands a
+  // single every-day interval. Drives an advisory banner.
+  final bool supportsCron;
+  const RotationScheduleScreen({
+    super.key,
+    required this.initial,
+    this.sleep,
+    this.supportsCron = true,
+  });
 
   @override
   State<RotationScheduleScreen> createState() => _RotationScheduleScreenState();
@@ -27,8 +35,9 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
 
   static const _dayOrder = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun (cron dow)
 
-  List<int> _everyItems(String unit) =>
-      unit == 'hours' ? const [1, 2, 3, 4, 6, 8, 12] : const [5, 10, 15, 20, 30];
+  List<int> _everyItems(String unit) => unit == 'hours'
+      ? const [1, 2, 3, 4, 6, 8, 12]
+      : const [5, 10, 15, 20, 30];
 
   Future<void> _editTime(ScheduleCard card, int idx) async {
     final parts = card.times[idx].split(':');
@@ -55,9 +64,11 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final upcoming = nextRuns(_compiled, sleep: widget.sleep, count: 4)
-        .map(_formatRun)
-        .toList();
+    final upcoming = nextRuns(
+      _compiled,
+      sleep: widget.sleep,
+      count: 4,
+    ).map(_formatRun).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -74,6 +85,18 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
+          if (!widget.supportsCron)
+            Card(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                  "This frame's firmware only supports a simple repeating "
+                  'interval (e.g. every 2 hours). Day-of-week and specific-time '
+                  'schedules need a firmware update and won\'t be saved.',
+                ),
+              ),
+            ),
           for (var i = 0; i < _cards.length; i++) _buildCard(i, _cards[i]),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -93,12 +116,16 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
               ),
             ),
           const Divider(height: 32),
-          Text('Upcoming rotations',
-              style: Theme.of(context).textTheme.labelMedium),
+          Text(
+            'Upcoming rotations',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
           const SizedBox(height: 8),
           if (upcoming.isEmpty)
-            const Text('No upcoming rotations for this schedule.',
-                style: TextStyle(color: Colors.grey))
+            const Text(
+              'No upcoming rotations for this schedule.',
+              style: TextStyle(color: Colors.grey),
+            )
           else
             Wrap(
               spacing: 6,
@@ -120,8 +147,10 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
           children: [
             Row(
               children: [
-                Text('Schedule ${idx + 1}',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  'Schedule ${idx + 1}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 const Spacer(),
                 if (_cards.length > 1)
                   IconButton(
@@ -130,13 +159,12 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
                   ),
               ],
             ),
-            if (card.raw != null)
-              _buildRaw(card)
-            else
-              _buildBuilder(card),
+            if (card.raw != null) _buildRaw(card) else _buildBuilder(card),
             const SizedBox(height: 8),
-            Text(describeCard(card),
-                style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              describeCard(card),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
@@ -147,7 +175,9 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
                     card.raw = null;
                   }
                 }),
-                child: Text(card.raw != null ? 'Use builder' : 'Advanced (cron)'),
+                child: Text(
+                  card.raw != null ? 'Use builder' : 'Advanced (cron)',
+                ),
               ),
             ),
           ],
@@ -178,7 +208,12 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
         Wrap(
           spacing: 6,
           children: [
-            for (final m in const ['everyday', 'weekdays', 'weekends', 'custom'])
+            for (final m in const [
+              'everyday',
+              'weekdays',
+              'weekends',
+              'custom',
+            ])
               ChoiceChip(
                 label: Text(_daysModeLabel(m)),
                 selected: card.daysMode == m,
@@ -256,13 +291,19 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
         _dropdown<int>(
           label: 'From',
           value: card.fromHour,
-          items: {for (var h = 0; h < 24; h++) h: '${h.toString().padLeft(2, '0')}:00'},
+          items: {
+            for (var h = 0; h < 24; h++)
+              h: '${h.toString().padLeft(2, '0')}:00',
+          },
           onChanged: (v) => setState(() => card.fromHour = v),
         ),
         _dropdown<int>(
           label: 'To',
           value: card.toHour,
-          items: {for (var h = 0; h < 24; h++) h: '${h.toString().padLeft(2, '0')}:00'},
+          items: {
+            for (var h = 0; h < 24; h++)
+              h: '${h.toString().padLeft(2, '0')}:00',
+          },
           onChanged: (v) => setState(() => card.toHour = v),
         ),
       ],
@@ -307,7 +348,10 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
       child: DropdownButtonFormField<T>(
         value: value,
         isDense: true,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
         items: [
           for (final e in items.entries)
             DropdownMenuItem<T>(value: e.key, child: Text(e.value)),

@@ -32,14 +32,19 @@ class SettingsScreen extends StatelessWidget {
                   title: const Text('Device Name'),
                   subtitle: Text(config.deviceName),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider, 'Device Name',
-                      config.deviceName, 'device_name'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'Device Name',
+                    config.deviceName,
+                    'device_name',
+                  ),
                 ),
                 ListTile(
                   title: const Text('WiFi SSID'),
-                  subtitle: Text(config.wifiSsid.isEmpty
-                      ? 'Not set'
-                      : config.wifiSsid),
+                  subtitle: Text(
+                    config.wifiSsid.isEmpty ? 'Not set' : config.wifiSsid,
+                  ),
                   trailing: const Icon(Icons.edit),
                   onTap: () => _editWifi(context, provider),
                 ),
@@ -47,35 +52,58 @@ class SettingsScreen extends StatelessWidget {
                   title: const Text('Orientation'),
                   subtitle: Text(config.displayOrientation),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showPicker(context, provider,
-                      'Display Orientation', 'display_orientation',
-                      {'landscape': 'Landscape', 'portrait': 'Portrait'}),
+                  onTap: () => _showPicker(
+                    context,
+                    provider,
+                    'Display Orientation',
+                    'display_orientation',
+                    {'landscape': 'Landscape', 'portrait': 'Portrait'},
+                  ),
                 ),
                 ListTile(
                   title: const Text('Display Rotation'),
                   subtitle: Text('${config.displayRotationDeg}\u00B0'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showPicker(context, provider,
-                      'Display Rotation', 'display_rotation_deg',
-                      {0: '0\u00B0', 90: '90\u00B0', 180: '180\u00B0', 270: '270\u00B0'}),
+                  onTap: () => _showPicker(
+                    context,
+                    provider,
+                    'Display Rotation',
+                    'display_rotation_deg',
+                    {
+                      0: '0\u00B0',
+                      90: '90\u00B0',
+                      180: '180\u00B0',
+                      270: '270\u00B0',
+                    },
+                  ),
                 ),
                 ListTile(
                   title: const Text('Timezone'),
-                  subtitle: Text(config.timezone.isEmpty
-                      ? 'Not set'
-                      : config.timezone),
+                  subtitle: Text(
+                    config.timezone.isEmpty ? 'Not set' : config.timezone,
+                  ),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider, 'Timezone',
-                      config.timezone, 'timezone'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'Timezone',
+                    config.timezone,
+                    'timezone',
+                  ),
                 ),
                 ListTile(
                   title: const Text('NTP Server'),
-                  subtitle: Text(config.ntpServer.isEmpty
-                      ? 'Not set'
-                      : config.ntpServer),
+                  subtitle: Text(
+                    config.ntpServer.isEmpty ? 'Not set' : config.ntpServer,
+                  ),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider, 'NTP Server',
-                      config.ntpServer, 'ntp_server'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'NTP Server',
+                    config.ntpServer,
+                    'ntp_server',
+                  ),
                 ),
 
                 // === Auto Rotate ===
@@ -84,8 +112,7 @@ class SettingsScreen extends StatelessWidget {
                   title: const Text('Auto Rotate'),
                   subtitle: const Text('Automatically cycle through images'),
                   value: config.autoRotate,
-                  onChanged: (v) =>
-                      provider.updateConfig({'auto_rotate': v}),
+                  onChanged: (v) => provider.updateConfig({'auto_rotate': v}),
                 ),
                 ListTile(
                   title: const Text('Rotation Schedule'),
@@ -95,33 +122,47 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 ListTile(
                   title: const Text('Source'),
-                  subtitle: Text(config.rotationMode == 'url'
-                      ? 'URL'
-                      : 'Storage'),
+                  subtitle: Text(
+                    config.rotationMode == 'url' ? 'URL' : 'Storage',
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showPicker(context, provider,
-                      'Rotation Source', 'rotation_mode',
-                      {'storage': 'Storage', 'url': 'URL'}),
+                  onTap: () => _showPicker(
+                    context,
+                    provider,
+                    'Rotation Source',
+                    'rotation_mode',
+                    {'storage': 'Storage', 'url': 'URL'},
+                  ),
                 ),
                 if (config.rotationMode == 'storage')
                   ListTile(
                     title: const Text('Storage Rotation Order'),
                     subtitle: Text(config.sdRotationMode),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _showPicker(context, provider,
-                        'Storage Rotation Order', 'sd_rotation_mode',
-                        {'sequential': 'Sequential', 'random': 'Random'}),
+                    onTap: () => _showPicker(
+                      context,
+                      provider,
+                      'Storage Rotation Order',
+                      'sd_rotation_mode',
+                      {'sequential': 'Sequential', 'random': 'Random'},
+                    ),
                   ),
                 if (config.rotationMode == 'url') ...[
                   ListTile(
                     title: const Text('Image URL'),
-                    subtitle: Text(config.imageUrl.isEmpty
-                        ? 'Not set'
-                        : config.imageUrl,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      config.imageUrl.isEmpty ? 'Not set' : config.imageUrl,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     trailing: const Icon(Icons.edit),
-                    onTap: () => _editText(context, provider, 'Image URL',
-                        config.imageUrl, 'image_url'),
+                    onTap: () => _editText(
+                      context,
+                      provider,
+                      'Image URL',
+                      config.imageUrl,
+                      'image_url',
+                    ),
                   ),
                   SwitchListTile(
                     title: const Text('Save Downloaded Images'),
@@ -131,18 +172,25 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   ListTile(
                     title: const Text('Access Token'),
-                    subtitle: Text(config.accessToken.isEmpty
-                        ? 'Not set'
-                        : '\u2022' * 8),
+                    subtitle: Text(
+                      config.accessToken.isEmpty ? 'Not set' : '\u2022' * 8,
+                    ),
                     trailing: const Icon(Icons.edit),
-                    onTap: () => _editText(context, provider,
-                        'Access Token', config.accessToken, 'access_token'),
+                    onTap: () => _editText(
+                      context,
+                      provider,
+                      'Access Token',
+                      config.accessToken,
+                      'access_token',
+                    ),
                   ),
                   ListTile(
                     title: const Text('Custom Header'),
-                    subtitle: Text(config.httpHeaderKey.isEmpty
-                        ? 'Not set'
-                        : '${config.httpHeaderKey}: ${config.httpHeaderValue}'),
+                    subtitle: Text(
+                      config.httpHeaderKey.isEmpty
+                          ? 'Not set'
+                          : '${config.httpHeaderKey}: ${config.httpHeaderValue}',
+                    ),
                     trailing: const Icon(Icons.edit),
                     onTap: () => _editHeader(context, provider),
                   ),
@@ -154,7 +202,8 @@ class SettingsScreen extends StatelessWidget {
                   title: const Text('Sleep Schedule'),
                   subtitle: config.sleepScheduleEnabled
                       ? Text(
-                          '${_formatMinutes(config.sleepScheduleStart)} \u2013 ${_formatMinutes(config.sleepScheduleEnd)}')
+                          '${_formatMinutes(config.sleepScheduleStart)} \u2013 ${_formatMinutes(config.sleepScheduleEnd)}',
+                        )
                       : const Text('Disabled'),
                   value: config.sleepScheduleEnabled,
                   onChanged: (v) =>
@@ -165,15 +214,23 @@ class SettingsScreen extends StatelessWidget {
                     title: const Text('Sleep From'),
                     subtitle: Text(_formatMinutes(config.sleepScheduleStart)),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _pickTime(context, provider,
-                        'sleep_schedule_start', config.sleepScheduleStart),
+                    onTap: () => _pickTime(
+                      context,
+                      provider,
+                      'sleep_schedule_start',
+                      config.sleepScheduleStart,
+                    ),
                   ),
                   ListTile(
                     title: const Text('Sleep Until'),
                     subtitle: Text(_formatMinutes(config.sleepScheduleEnd)),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _pickTime(context, provider,
-                        'sleep_schedule_end', config.sleepScheduleEnd),
+                    onTap: () => _pickTime(
+                      context,
+                      provider,
+                      'sleep_schedule_end',
+                      config.sleepScheduleEnd,
+                    ),
                   ),
                 ],
 
@@ -181,8 +238,9 @@ class SettingsScreen extends StatelessWidget {
                 _SectionHeader('Power'),
                 SwitchListTile(
                   title: const Text('Deep Sleep'),
-                  subtitle:
-                      const Text('Sleep between rotations to save battery'),
+                  subtitle: const Text(
+                    'Sleep between rotations to save battery',
+                  ),
                   value: config.deepSleepEnabled,
                   onChanged: (v) =>
                       provider.updateConfig({'deep_sleep_enabled': v}),
@@ -192,33 +250,48 @@ class SettingsScreen extends StatelessWidget {
                 _SectionHeader('Home Assistant'),
                 ListTile(
                   title: const Text('Home Assistant URL'),
-                  subtitle: Text(config.haUrl.isEmpty
-                      ? 'Not set'
-                      : config.haUrl),
+                  subtitle: Text(
+                    config.haUrl.isEmpty ? 'Not set' : config.haUrl,
+                  ),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider,
-                      'Home Assistant URL', config.haUrl, 'ha_url'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'Home Assistant URL',
+                    config.haUrl,
+                    'ha_url',
+                  ),
                 ),
 
                 // === AI Generation ===
                 _SectionHeader('AI Generation'),
                 ListTile(
                   title: const Text('OpenAI API Key'),
-                  subtitle: Text(config.openaiApiKey.isEmpty
-                      ? 'Not set'
-                      : '\u2022' * 8),
+                  subtitle: Text(
+                    config.openaiApiKey.isEmpty ? 'Not set' : '\u2022' * 8,
+                  ),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider,
-                      'OpenAI API Key', config.openaiApiKey, 'openai_api_key'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'OpenAI API Key',
+                    config.openaiApiKey,
+                    'openai_api_key',
+                  ),
                 ),
                 ListTile(
                   title: const Text('Google Gemini API Key'),
-                  subtitle: Text(config.googleApiKey.isEmpty
-                      ? 'Not set'
-                      : '\u2022' * 8),
+                  subtitle: Text(
+                    config.googleApiKey.isEmpty ? 'Not set' : '\u2022' * 8,
+                  ),
                   trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(context, provider,
-                      'Google Gemini API Key', config.googleApiKey, 'google_api_key'),
+                  onTap: () => _editText(
+                    context,
+                    provider,
+                    'Google Gemini API Key',
+                    config.googleApiKey,
+                    'google_api_key',
+                  ),
                 ),
 
                 // === Firmware Update ===
@@ -233,12 +306,12 @@ class SettingsScreen extends StatelessWidget {
                       battery.charging
                           ? Icons.battery_charging_full
                           : battery.level > 75
-                              ? Icons.battery_full
-                              : battery.level > 50
-                                  ? Icons.battery_5_bar
-                                  : battery.level > 25
-                                      ? Icons.battery_3_bar
-                                      : Icons.battery_1_bar,
+                          ? Icons.battery_full
+                          : battery.level > 50
+                          ? Icons.battery_5_bar
+                          : battery.level > 25
+                          ? Icons.battery_3_bar
+                          : Icons.battery_1_bar,
                       color: battery.level <= 20
                           ? Theme.of(context).colorScheme.error
                           : null,
@@ -276,11 +349,16 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => _sleepDevice(context, provider),
                 ),
                 ListTile(
-                  title: Text('Factory Reset',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
-                  leading: Icon(Icons.restore,
-                      color: Theme.of(context).colorScheme.error),
+                  title: Text(
+                    'Factory Reset',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  leading: Icon(
+                    Icons.restore,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                   onTap: () => _factoryReset(context, provider),
                 ),
                 const SizedBox(height: 24),
@@ -298,7 +376,9 @@ class SettingsScreen extends StatelessWidget {
         },
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.photo_library), label: 'Gallery'),
+            icon: Icon(Icons.photo_library),
+            label: 'Gallery',
+          ),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
@@ -306,27 +386,60 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _editSchedule(
-      BuildContext context, DeviceProvider provider, DeviceConfig config) async {
+    BuildContext context,
+    DeviceProvider provider,
+    DeviceConfig config,
+  ) async {
     final sleep = config.sleepScheduleEnabled
         ? QuietHours(true, config.sleepScheduleStart, config.sleepScheduleEnd)
         : null;
     final result = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
-        builder: (_) =>
-            RotationScheduleScreen(initial: config.rotateCron, sleep: sleep),
+        builder: (_) => RotationScheduleScreen(
+          initial: config.rotateCron,
+          sleep: sleep,
+          supportsCron: config.supportsCron,
+        ),
       ),
     );
-    if (result != null) {
-      final updates = <String, dynamic>{'rotate_cron': result};
-      // Also send a derived rotate_interval (when the schedule is a simple
-      // every-day interval) so older firmware that predates rotate_cron still
-      // applies it; newer firmware ignores it in favour of rotate_cron.
-      final legacyInterval = cronToInterval(result);
-      if (legacyInterval != null) {
-        updates['rotate_interval'] = legacyInterval;
+    if (result == null) return;
+
+    final legacyInterval = cronToInterval(result);
+    // Old firmware predates rotate_cron: it only understands rotate_interval
+    // and silently ignores a cron schedule. If the new schedule can't be
+    // expressed as a simple every-day interval, saving it would do nothing on
+    // the device — refuse instead of silently dropping the edit.
+    if (!config.supportsCron && legacyInterval == null) {
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Schedule not supported'),
+            content: const Text(
+              "This frame's firmware only supports a simple repeating "
+              'interval. Update the firmware to use day-of-week or '
+              'specific-time schedules.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
       }
-      provider.updateConfig(updates);
+      return;
     }
+
+    final updates = <String, dynamic>{'rotate_cron': result};
+    // Also send a derived rotate_interval (when the schedule is a simple
+    // every-day interval) so older firmware that predates rotate_cron still
+    // applies it; newer firmware ignores it in favour of rotate_cron.
+    if (legacyInterval != null) {
+      updates['rotate_interval'] = legacyInterval;
+    }
+    provider.updateConfig(updates);
   }
 
   String _formatMinutes(int minutesFromMidnight) {
@@ -336,8 +449,13 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // Generic text editor dialog
-  void _editText(BuildContext context, DeviceProvider provider,
-      String title, String current, String key) {
+  void _editText(
+    BuildContext context,
+    DeviceProvider provider,
+    String title,
+    String current,
+    String key,
+  ) {
     final controller = TextEditingController(text: current);
     showDialog(
       context: context,
@@ -366,8 +484,9 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _editWifi(BuildContext context, DeviceProvider provider) {
-    final ssidCtrl =
-        TextEditingController(text: provider.config?.wifiSsid ?? '');
+    final ssidCtrl = TextEditingController(
+      text: provider.config?.wifiSsid ?? '',
+    );
     final passCtrl = TextEditingController();
     showDialog(
       context: context,
@@ -379,15 +498,18 @@ class SettingsScreen extends StatelessWidget {
             TextField(
               controller: ssidCtrl,
               decoration: const InputDecoration(
-                  labelText: 'SSID', border: OutlineInputBorder()),
+                labelText: 'SSID',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: passCtrl,
               obscureText: true,
               decoration: const InputDecoration(
-                  labelText: 'Password (leave empty to keep current)',
-                  border: OutlineInputBorder()),
+                labelText: 'Password (leave empty to keep current)',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
@@ -415,8 +537,13 @@ class SettingsScreen extends StatelessWidget {
   }
 
   // Generic picker dialog
-  void _showPicker<T>(BuildContext context, DeviceProvider provider,
-      String title, String key, Map<T, String> options) {
+  void _showPicker<T>(
+    BuildContext context,
+    DeviceProvider provider,
+    String title,
+    String key,
+    Map<T, String> options,
+  ) {
     showDialog(
       context: context,
       builder: (context) => SimpleDialog(
@@ -434,24 +561,29 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickTime(BuildContext context, DeviceProvider provider,
-      String key, int currentMinutes) async {
+  void _pickTime(
+    BuildContext context,
+    DeviceProvider provider,
+    String key,
+    int currentMinutes,
+  ) async {
     final initial = TimeOfDay(
-        hour: currentMinutes ~/ 60, minute: currentMinutes % 60);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
+      hour: currentMinutes ~/ 60,
+      minute: currentMinutes % 60,
     );
+    final picked = await showTimePicker(context: context, initialTime: initial);
     if (picked != null) {
       provider.updateConfig({key: picked.hour * 60 + picked.minute});
     }
   }
 
   void _editHeader(BuildContext context, DeviceProvider provider) {
-    final keyCtrl =
-        TextEditingController(text: provider.config?.httpHeaderKey ?? '');
-    final valCtrl =
-        TextEditingController(text: provider.config?.httpHeaderValue ?? '');
+    final keyCtrl = TextEditingController(
+      text: provider.config?.httpHeaderKey ?? '',
+    );
+    final valCtrl = TextEditingController(
+      text: provider.config?.httpHeaderValue ?? '',
+    );
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -462,13 +594,17 @@ class SettingsScreen extends StatelessWidget {
             TextField(
               controller: keyCtrl,
               decoration: const InputDecoration(
-                  labelText: 'Header Name', border: OutlineInputBorder()),
+                labelText: 'Header Name',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: valCtrl,
               decoration: const InputDecoration(
-                  labelText: 'Header Value', border: OutlineInputBorder()),
+                labelText: 'Header Value',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
@@ -498,7 +634,8 @@ class SettingsScreen extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Sleep'),
         content: const Text(
-            'Put the device to sleep? It will be unreachable until it wakes up.'),
+          'Put the device to sleep? It will be unreachable until it wakes up.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -525,9 +662,9 @@ class SettingsScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -544,9 +681,9 @@ class SettingsScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
     }
   }
@@ -598,9 +735,9 @@ class SettingsScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
   }
@@ -611,9 +748,10 @@ class SettingsScreen extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Factory Reset'),
         content: const Text(
-            'This will erase all settings and WiFi credentials. '
-            'The device will restart in setup mode.\n\n'
-            'This cannot be undone.'),
+          'This will erase all settings and WiFi credentials. '
+          'The device will restart in setup mode.\n\n'
+          'This cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -643,9 +781,9 @@ class SettingsScreen extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -662,8 +800,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -745,7 +883,8 @@ class _OtaSectionState extends State<_OtaSection> {
       builder: (context) => AlertDialog(
         title: const Text('Install Update'),
         content: Text(
-            'Install firmware $_latestVersion? The device will reboot after installation.'),
+          'Install firmware $_latestVersion? The device will reboot after installation.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -806,7 +945,8 @@ class _OtaSectionState extends State<_OtaSection> {
         ListTile(
           title: const Text('Current Version'),
           subtitle: Text(
-              _currentVersion.isEmpty ? 'Loading...' : _currentVersion),
+            _currentVersion.isEmpty ? 'Loading...' : _currentVersion,
+          ),
         ),
         if (_latestVersion.isNotEmpty && _latestVersion != '-')
           ListTile(
@@ -844,7 +984,9 @@ class _OtaSectionState extends State<_OtaSection> {
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.download),
                   label: const Text('Install'),
@@ -860,8 +1002,10 @@ class _OtaSectionState extends State<_OtaSection> {
               children: [
                 LinearProgressIndicator(value: _progress / 100),
                 const SizedBox(height: 4),
-                Text('$_progress%',
-                    style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  '$_progress%',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ],
             ),
           ),
@@ -871,12 +1015,12 @@ class _OtaSectionState extends State<_OtaSection> {
             child: Text(
               _statusMessage,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: _state == 'error'
-                        ? Theme.of(context).colorScheme.error
-                        : _state == 'success' || updateAvailable
-                            ? Colors.green
-                            : null,
-                  ),
+                color: _state == 'error'
+                    ? Theme.of(context).colorScheme.error
+                    : _state == 'success' || updateAvailable
+                    ? Colors.green
+                    : null,
+              ),
             ),
           ),
       ],
