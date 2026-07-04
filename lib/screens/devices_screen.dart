@@ -84,16 +84,21 @@ class _DevicesScreenState extends State<DevicesScreen> {
     final provider = context.read<DeviceProvider>();
     await provider.connectToDevice(device);
     try {
-      final sysInfo = await provider.apiClient!.getSystemInfo()
-          .timeout(const Duration(seconds: 5));
+      final sysInfo = await provider.apiClient!.getSystemInfo().timeout(
+        const Duration(seconds: 5),
+      );
       if (!mounted) return;
       Navigator.pop(context); // dismiss spinner
       // Save with original host (mDNS name), not resolved IP
-      await SavedDevices.addDevice(Device(
-        name: sysInfo.deviceName.isNotEmpty ? sysInfo.deviceName : device.name,
-        host: device.host,
-        port: device.port,
-      ));
+      await SavedDevices.addDevice(
+        Device(
+          name: sysInfo.deviceName.isNotEmpty
+              ? sysInfo.deviceName
+              : device.name,
+          host: device.host,
+          port: device.port,
+        ),
+      );
       if (!mounted) return;
       context.go('/gallery');
     } catch (_) {
@@ -171,8 +176,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
             tooltip: 'Set up new device',
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => const ProvisioningScreen()),
+              MaterialPageRoute(builder: (_) => const ProvisioningScreen()),
             ),
           ),
         ],
@@ -184,10 +188,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
           children: [
             // Saved devices
             if (_savedDevices.isNotEmpty) ...[
-              Text(
-                'Devices',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Devices', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               ...List.generate(_savedDevices.length, (index) {
                 final device = _savedDevices[index];
@@ -225,40 +226,41 @@ class _DevicesScreenState extends State<DevicesScreen> {
                     .where((d) => !savedHosts.contains(d.host))
                     .toList();
                 return filtered.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'No new devices found.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: _showManualConnectDialog,
-                            child: const Text('Enter IP address manually'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final device = filtered[index];
-                        return ListTile(
-                          leading: const Icon(Icons.image),
-                          title: Text(device.name),
-                          subtitle: Text('${device.host}:${device.port}'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _connectToDevice(device),
-                        );
-                      },
-                    );
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'No new devices found.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _showManualConnectDialog,
+                              child: const Text('Enter IP address manually'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final device = filtered[index];
+                          return ListTile(
+                            leading: const Icon(Icons.image),
+                            title: Text(device.name),
+                            subtitle: Text('${device.host}:${device.port}'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => _connectToDevice(device),
+                          );
+                        },
+                      );
               }(),
             ),
           ],

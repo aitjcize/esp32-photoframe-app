@@ -17,9 +17,18 @@ class ProvisioningScreen extends StatefulWidget {
   State<ProvisioningScreen> createState() => _ProvisioningScreenState();
 }
 
-enum _ProvisionStep { scanning, waitingForManualConnect, connecting, configuring, saving, done, error }
+enum _ProvisionStep {
+  scanning,
+  waitingForManualConnect,
+  connecting,
+  configuring,
+  saving,
+  done,
+  error,
+}
 
-class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBindingObserver {
+class _ProvisioningScreenState extends State<ProvisioningScreen>
+    with WidgetsBindingObserver {
   _ProvisionStep _step = _ProvisionStep.scanning;
   String _statusMessage = '';
   String? _errorMessage;
@@ -97,7 +106,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
             _statusMessage = 'Connect to your PhotoFrame\'s WiFi hotspot';
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Not connected to a PhotoFrame hotspot yet')),
+            const SnackBar(
+              content: Text('Not connected to a PhotoFrame hotspot yet'),
+            ),
           );
         }
       }
@@ -107,7 +118,9 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
           _statusMessage = 'Connect to your PhotoFrame\'s WiFi hotspot';
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Not connected to a PhotoFrame hotspot yet')),
+          const SnackBar(
+            content: Text('Not connected to a PhotoFrame hotspot yet'),
+          ),
         );
       }
     }
@@ -127,7 +140,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
     if (canScan != CanStartScan.yes) {
       setState(() {
         _step = _ProvisionStep.error;
-        _errorMessage = 'Cannot start WiFi scan. Please enable WiFi and location services.';
+        _errorMessage =
+            'Cannot start WiFi scan. Please enable WiFi and location services.';
       });
       return;
     }
@@ -145,7 +159,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
     if (photoframeHotspots.isEmpty) {
       setState(() {
         _step = _ProvisionStep.error;
-        _errorMessage = 'No PhotoFrame setup hotspots found.\n\n'
+        _errorMessage =
+            'No PhotoFrame setup hotspots found.\n\n'
             'Make sure your PhotoFrame is in setup mode '
             '(not yet configured or factory reset).';
       });
@@ -209,8 +224,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
 
       if (response.statusCode == 200) {
         final networks = jsonDecode(response.body) as List<dynamic>;
-        networks.sort((a, b) =>
-            (b['rssi'] as int? ?? -100).compareTo(a['rssi'] as int? ?? -100));
+        networks.sort(
+          (a, b) =>
+              (b['rssi'] as int? ?? -100).compareTo(a['rssi'] as int? ?? -100),
+        );
 
         if (mounted) {
           setState(() {
@@ -241,17 +258,19 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('http://192.168.4.1/save'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'ssid': _selectedSsid!,
-          'password': _passwordController.text,
-          'deviceName': _deviceNameController.text.trim().isEmpty
-              ? 'PhotoFrame'
-              : _deviceNameController.text.trim(),
-        },
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse('http://192.168.4.1/save'),
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: {
+              'ssid': _selectedSsid!,
+              'password': _passwordController.text,
+              'deviceName': _deviceNameController.text.trim().isEmpty
+                  ? 'PhotoFrame'
+                  : _deviceNameController.text.trim(),
+            },
+          )
+          .timeout(const Duration(seconds: 20));
 
       if (!_isIOS) {
         await WiFiForIoTPlugin.forceWifiUsage(false);
@@ -263,14 +282,16 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
           response.body.toLowerCase().contains('success')) {
         setState(() {
           _step = _ProvisionStep.done;
-          _statusMessage = 'Device configured successfully!\n\n'
+          _statusMessage =
+              'Device configured successfully!\n\n'
               'The device will restart and connect to your WiFi network. '
               'It should appear in your device list shortly.';
         });
       } else {
         setState(() {
           _step = _ProvisionStep.error;
-          _errorMessage = 'Device returned an error. '
+          _errorMessage =
+              'Device returned an error. '
               'Please check the credentials and try again.';
         });
       }
@@ -282,7 +303,8 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
       if (mounted) {
         setState(() {
           _step = _ProvisionStep.done;
-          _statusMessage = 'Credentials sent!\n\n'
+          _statusMessage =
+              'Credentials sent!\n\n'
               'The device should restart and connect to your WiFi network. '
               'It should appear in your device list shortly.';
         });
@@ -294,10 +316,7 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Set Up New Device')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildBody(),
-      ),
+      body: Padding(padding: const EdgeInsets.all(16), child: _buildBody()),
     );
   }
 
@@ -318,8 +337,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_statusMessage,
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    _statusMessage,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   const Text('Tap a device to begin setup:'),
                   const SizedBox(height: 8),
@@ -348,9 +369,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
             children: [
               const Icon(Icons.wifi_find, size: 64),
               const SizedBox(height: 24),
-              Text(_statusMessage,
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center),
+              Text(
+                _statusMessage,
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 16),
               const Text(
                 'Go to Settings → Wi-Fi and connect to a network\n'
@@ -387,8 +410,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
       case _ProvisionStep.configuring:
         return ListView(
           children: [
-            Text('WiFi Network',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'WiFi Network',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             ..._wifiNetworks.map((network) {
               final ssid = network['ssid'] as String? ?? '';
@@ -401,14 +426,18 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
                   rssi != null && rssi >= -60
                       ? Icons.wifi
                       : rssi != null && rssi >= -70
-                          ? Icons.wifi_2_bar
-                          : Icons.wifi_1_bar,
+                      ? Icons.wifi_2_bar
+                      : Icons.wifi_1_bar,
                 ),
                 title: Text(ssid),
-                subtitle: Text('${rssi ?? "?"} dBm${authMode > 0 ? ' \u2022 Secured' : ''}'),
+                subtitle: Text(
+                  '${rssi ?? "?"} dBm${authMode > 0 ? ' \u2022 Secured' : ''}',
+                ),
                 trailing: isSelected
-                    ? Icon(Icons.check_circle,
-                        color: Theme.of(context).colorScheme.primary)
+                    ? Icon(
+                        Icons.check_circle,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
                     : null,
                 selected: isSelected,
                 onTap: () => setState(() => _selectedSsid = ssid),
@@ -423,9 +452,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
                   labelText: 'WiFi Password',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscurePassword
-                        ? Icons.visibility
-                        : Icons.visibility_off),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
                     onPressed: () =>
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
@@ -467,8 +498,11 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.check_circle,
-                  size: 64, color: Theme.of(context).colorScheme.primary),
+              Icon(
+                Icons.check_circle,
+                size: 64,
+                color: Theme.of(context).colorScheme.primary,
+              ),
               const SizedBox(height: 16),
               Text(_statusMessage, textAlign: TextAlign.center),
               const SizedBox(height: 24),
@@ -485,11 +519,16 @@ class _ProvisioningScreenState extends State<ProvisioningScreen> with WidgetsBin
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline,
-                  size: 64, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(height: 16),
-              Text(_errorMessage ?? 'Unknown error',
-                  textAlign: TextAlign.center),
+              Text(
+                _errorMessage ?? 'Unknown error',
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _startProvisioning,

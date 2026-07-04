@@ -28,8 +28,10 @@ class DeviceDiscovery {
 
     debugPrint('Starting mDNS discovery for _esp32-pframe._tcp');
 
-    _discovery = await nsd.startDiscovery('_esp32-pframe._tcp',
-        ipLookupType: nsd.IpLookupType.v4);
+    _discovery = await nsd.startDiscovery(
+      '_esp32-pframe._tcp',
+      ipLookupType: nsd.IpLookupType.v4,
+    );
     _discovery!.addServiceListener((service, status) {
       if (status == nsd.ServiceStatus.found) {
         _onServiceFound(service);
@@ -43,7 +45,9 @@ class DeviceDiscovery {
     // Ping immediately, then every 15 seconds
     _pingDevices(savedDevices);
     _pingTimer = Timer.periodic(
-        const Duration(seconds: 15), (_) => _pingDevices(savedDevices));
+      const Duration(seconds: 15),
+      (_) => _pingDevices(savedDevices),
+    );
   }
 
   /// Update the list of devices to ping.
@@ -51,25 +55,32 @@ class DeviceDiscovery {
     _pingTimer?.cancel();
     _pingDevices(savedDevices);
     _pingTimer = Timer.periodic(
-        const Duration(seconds: 15), (_) => _pingDevices(savedDevices));
+      const Duration(seconds: 15),
+      (_) => _pingDevices(savedDevices),
+    );
   }
 
   Future<void> _pingDevices(List<Device> devices) async {
     final online = <String>{};
     final client = http.Client();
     try {
-      await Future.wait(devices.map((device) async {
-        try {
-          final uri = Uri.parse('http://${device.host}:${device.port}/api/time');
-          final response = await client.get(uri).timeout(
-              const Duration(seconds: 3));
-          if (response.statusCode == 200) {
-            online.add(device.host);
+      await Future.wait(
+        devices.map((device) async {
+          try {
+            final uri = Uri.parse(
+              'http://${device.host}:${device.port}/api/time',
+            );
+            final response = await client
+                .get(uri)
+                .timeout(const Duration(seconds: 3));
+            if (response.statusCode == 200) {
+              online.add(device.host);
+            }
+          } catch (_) {
+            // Device offline or unreachable
           }
-        } catch (_) {
-          // Device offline or unreachable
-        }
-      }));
+        }),
+      );
     } finally {
       client.close();
     }
@@ -93,7 +104,9 @@ class DeviceDiscovery {
         : service.name ?? host;
     final persistHost = hostBytes != null ? utf8.decode(hostBytes) : host;
 
-    debugPrint('mDNS found: name=$displayName host=$persistHost (resolved=$host) port=$port');
+    debugPrint(
+      'mDNS found: name=$displayName host=$persistHost (resolved=$host) port=$port',
+    );
 
     final device = Device(name: displayName, host: persistHost, port: port);
     _found[persistHost] = device;

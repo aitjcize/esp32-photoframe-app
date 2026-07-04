@@ -12,7 +12,7 @@ class ApiClient {
   final http.Client _client;
 
   ApiClient({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   void dispose() {
     _client.close();
@@ -77,8 +77,7 @@ class ApiClient {
     Uint8List? thumbnailBytes,
     String? thumbnailFilename,
   }) async {
-    final request =
-        http.MultipartRequest('POST', _uri('/api/display-image'));
+    final request = http.MultipartRequest('POST', _uri('/api/display-image'));
     request.files.add(
       http.MultipartFile.fromBytes('image', imageBytes, filename: filename),
     );
@@ -136,8 +135,7 @@ class ApiClient {
   }
 
   Future<void> deleteAlbum(String name) async {
-    final response =
-        await _client.delete(_uri('/api/albums', {'name': name}));
+    final response = await _client.delete(_uri('/api/albums', {'name': name}));
     _checkResponse(response);
   }
 
@@ -153,8 +151,7 @@ class ApiClient {
   // --- Images ---
 
   Future<List<PhotoInfo>> getImages(String album) async {
-    final response =
-        await _client.get(_uri('/api/images', {'album': album}));
+    final response = await _client.get(_uri('/api/images', {'album': album}));
     _checkResponse(response);
     final List<dynamic> data = jsonDecode(response.body);
     return data
@@ -224,15 +221,13 @@ class ApiClient {
   // --- Processing Settings ---
 
   Future<Map<String, dynamic>> getProcessingSettings() async {
-    final response =
-        await _client.get(_uri('/api/settings/processing'));
+    final response = await _client.get(_uri('/api/settings/processing'));
     _checkResponse(response);
     return jsonDecode(response.body);
   }
 
   Future<Map<String, dynamic>> getPaletteSettings() async {
-    final response =
-        await _client.get(_uri('/api/settings/palette'));
+    final response = await _client.get(_uri('/api/settings/palette'));
     _checkResponse(response);
     return jsonDecode(response.body);
   }

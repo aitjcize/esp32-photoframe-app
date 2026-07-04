@@ -15,10 +15,7 @@ void main() {
 final _router = GoRouter(
   initialLocation: '/',
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const SplashScreen(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
     GoRoute(
       path: '/devices',
       builder: (context, state) => const DevicesScreen(),
@@ -44,9 +41,7 @@ class PhotoFrameApp extends StatelessWidget {
       child: MaterialApp.router(
         title: 'ESP32 PhotoFrame',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFFCE9160),
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFCE9160)),
           useMaterial3: true,
         ),
         darkTheme: ThemeData(

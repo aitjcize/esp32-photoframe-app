@@ -25,7 +25,9 @@ class SavedDevices {
   static Future<void> addDevice(Device device) async {
     final devices = await load();
     // Update existing or add new
-    final index = devices.indexWhere((d) => d.host == device.host && d.port == device.port);
+    final index = devices.indexWhere(
+      (d) => d.host == device.host && d.port == device.port,
+    );
     if (index >= 0) {
       devices[index] = device;
     } else {

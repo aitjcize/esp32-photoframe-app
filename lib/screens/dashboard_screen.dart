@@ -57,7 +57,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               const Icon(Icons.error_outline, size: 48),
               const SizedBox(height: 16),
-              Text('Connection failed', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Connection failed',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 8),
               Text(provider.error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
@@ -106,11 +109,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AspectRatio(
-                      aspectRatio: (sysInfo?.displayWidth ?? 800) /
+                      aspectRatio:
+                          (sysInfo?.displayWidth ?? 800) /
                           (sysInfo?.displayHeight ?? 480),
                       child: CachedNetworkImage(
-                        imageUrl: provider.apiClient!
-                            .getImageUrl(provider.currentImage!),
+                        imageUrl: provider.apiClient!.getImageUrl(
+                          provider.currentImage!,
+                        ),
                         fit: BoxFit.cover,
                         placeholder: (_, _) =>
                             const Center(child: CircularProgressIndicator()),
@@ -159,8 +164,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Device Info',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Device Info',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const Divider(),
                     _InfoRow('Name', sysInfo?.deviceName ?? '-'),
                     _InfoRow('Board', sysInfo?.board ?? '-'),
@@ -196,18 +203,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Status',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const Divider(),
-                      _InfoRow(
-                        'Auto Rotate',
-                        config.autoRotate ? 'On' : 'Off',
+                      Text(
+                        'Status',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
+                      const Divider(),
+                      _InfoRow('Auto Rotate', config.autoRotate ? 'On' : 'Off'),
                       _InfoRow(
                         'Schedule',
                         summarizeSchedule(config.rotateCron),
                       ),
-                      _InfoRow('Source', config.rotationMode == 'url' ? 'URL' : 'Storage'),
+                      _InfoRow(
+                        'Source',
+                        config.rotationMode == 'url' ? 'URL' : 'Storage',
+                      ),
                       _InfoRow(
                         'Deep Sleep',
                         config.deepSleepEnabled ? 'Enabled' : 'Disabled',
@@ -232,15 +241,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           }
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard), label: 'Dashboard'),
           NavigationDestination(
-              icon: Icon(Icons.photo_library), label: 'Gallery'),
+            icon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.photo_library),
+            label: 'Gallery',
+          ),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );
   }
-
 }
 
 class _InfoRow extends StatelessWidget {
@@ -257,11 +270,12 @@ class _InfoRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          Text(value,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500)),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+          ),
         ],
       ),
     );

@@ -35,7 +35,10 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
   ];
 
   final _geminiModels = const [
-    {'title': 'Gemini 3.1 Flash Image', 'value': 'gemini-3.1-flash-image-preview'},
+    {
+      'title': 'Gemini 3.1 Flash Image',
+      'value': 'gemini-3.1-flash-image-preview',
+    },
     {'title': 'Gemini 3 Pro Image', 'value': 'gemini-3-pro-image-preview'},
     {'title': 'Gemini 2.5 Flash Image', 'value': 'gemini-2.5-flash-image'},
   ];
@@ -97,9 +100,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Generation failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Generation failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -107,7 +110,10 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
   }
 
   Future<Uint8List> _generateOpenAI(
-      String apiKey, String prompt, bool isPortrait) async {
+    String apiKey,
+    String prompt,
+    bool isPortrait,
+  ) async {
     final isDalle3 = _model.contains('dall-e-3');
     final isDalle2 = _model.contains('dall-e-2');
 
@@ -147,7 +153,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('OpenAI API error: ${response.statusCode} - ${response.body}');
+      throw Exception(
+        'OpenAI API error: ${response.statusCode} - ${response.body}',
+      );
     }
 
     final data = jsonDecode(response.body);
@@ -166,11 +174,16 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
   }
 
   Future<Uint8List> _generateGemini(
-      String apiKey, String prompt, bool isPortrait) async {
+    String apiKey,
+    String prompt,
+    bool isPortrait,
+  ) async {
     final provider = context.read<DeviceProvider>();
     final sysInfo = provider.systemInfo;
     final maxDim = math.max(
-        sysInfo?.displayWidth ?? 800, sysInfo?.displayHeight ?? 480);
+      sysInfo?.displayWidth ?? 800,
+      sysInfo?.displayHeight ?? 480,
+    );
 
     final imageConfig = <String, dynamic>{
       'aspectRatio': isPortrait ? '3:4' : '4:3',
@@ -188,15 +201,16 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
 
     final response = await http.post(
       Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$apiKey'),
+        'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent?key=$apiKey',
+      ),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'contents': [
           {
             'parts': [
-              {'text': prompt}
-            ]
-          }
+              {'text': prompt},
+            ],
+          },
         ],
         'generationConfig': {
           'responseModalities': ['Image'],
@@ -206,12 +220,15 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Gemini API error: ${response.statusCode} - ${response.body}');
+      throw Exception(
+        'Gemini API error: ${response.statusCode} - ${response.body}',
+      );
     }
 
     final data = jsonDecode(response.body);
-    final b64 = data['candidates']?[0]?['content']?['parts']?[0]
-        ?['inlineData']?['data'] as String?;
+    final b64 =
+        data['candidates']?[0]?['content']?['parts']?[0]?['inlineData']?['data']
+            as String?;
     if (b64 == null) {
       throw Exception('No image data in Gemini response');
     }
@@ -233,15 +250,15 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
         name: 'ai-generated-${DateTime.now().millisecondsSinceEpoch}',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved to photo album')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Saved to photo album')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
       }
     }
   }
@@ -301,10 +318,12 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                     border: OutlineInputBorder(),
                   ),
                   items: _currentModels
-                      .map((m) => DropdownMenuItem(
-                            value: m['value'],
-                            child: Text(m['title']!),
-                          ))
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m['value'],
+                          child: Text(m['title']!),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) {
                     if (v != null) setState(() => _model = v);
@@ -333,7 +352,9 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.auto_awesome),
                   label: Text(_generating ? 'Generating...' : 'Generate'),
@@ -344,10 +365,7 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
                 if (_generatedImage != null) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.memory(
-                      _generatedImage!,
-                      fit: BoxFit.contain,
-                    ),
+                    child: Image.memory(_generatedImage!, fit: BoxFit.contain),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -373,4 +391,3 @@ class _AiGenerationScreenState extends State<AiGenerationScreen> {
     );
   }
 }
-

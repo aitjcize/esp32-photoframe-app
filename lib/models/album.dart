@@ -2,10 +2,7 @@ class Album {
   final String name;
   final bool enabled;
 
-  const Album({
-    required this.name,
-    required this.enabled,
-  });
+  const Album({required this.name, required this.enabled});
 
   factory Album.fromJson(Map<String, dynamic> json) {
     return Album(
