@@ -27,7 +27,31 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
   @override
   void initState() {
     super.initState();
-    _cards = cardsFromCron(widget.initial);
+    if (widget.supportsCron) {
+      _cards = cardsFromCron(widget.initial);
+    } else {
+      // Pre-cron firmware only understands a single every-day interval. Derive
+      // it from the current schedule and edit it with the simplified form, so
+      // the user never builds something the device can't run.
+      final seconds = cronToInterval(widget.initial) ?? 3600;
+      _cards = [_intervalCard(seconds)];
+    }
+  }
+
+  ScheduleCard _intervalCard(int seconds) {
+    final card = ScheduleCard();
+    card.mode = 'interval';
+    card.daysMode = 'everyday';
+    card.fromHour = 0;
+    card.toHour = 23;
+    if (seconds >= 3600 && seconds % 3600 == 0) {
+      card.unit = 'hours';
+      card.every = seconds ~/ 3600;
+    } else {
+      card.unit = 'minutes';
+      card.every = seconds < 60 ? 1 : seconds ~/ 60;
+    }
+    return card;
   }
 
   List<String> get _compiled => compileCards(_cards);
@@ -38,6 +62,18 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
   List<int> _everyItems(String unit) => unit == 'hours'
       ? const [1, 2, 3, 4, 6, 8, 12]
       : const [5, 10, 15, 20, 30];
+
+  // Preset steps for the given unit, guaranteeing the current value is present
+  // (a device-derived interval may not be one of the presets).
+  List<int> _everyItemsFor(String unit, int current) {
+    final base = List<int>.from(_everyItems(unit));
+    if (!base.contains(current)) {
+      base
+        ..add(current)
+        ..sort();
+    }
+    return base;
+  }
 
   Future<void> _editTime(ScheduleCard card, int idx) async {
     final parts = card.times[idx].split(':');
@@ -92,29 +128,31 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
                 padding: EdgeInsets.all(12),
                 child: Text(
                   "This frame's firmware only supports a simple repeating "
-                  'interval (e.g. every 2 hours). Day-of-week and specific-time '
-                  'schedules need a firmware update and won\'t be saved.',
+                  'interval. Update the firmware for day-of-week and '
+                  'specific-time schedules.',
                 ),
               ),
             ),
           for (var i = 0; i < _cards.length; i++) _buildCard(i, _cards[i]),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _totalRules >= 7
-                ? null
-                : () => setState(() => _cards.add(ScheduleCard())),
-            icon: const Icon(Icons.add),
-            label: const Text('Add another schedule'),
-          ),
-          if (_totalRules > 7)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                'This uses $_totalRules rules, but the device supports at most 7. '
-                'Remove a schedule or simplify the specific times.',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+          if (widget.supportsCron) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _totalRules >= 7
+                  ? null
+                  : () => setState(() => _cards.add(ScheduleCard())),
+              icon: const Icon(Icons.add),
+              label: const Text('Add another schedule'),
             ),
+            if (_totalRules > 7)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  'This uses $_totalRules rules, but the device supports at most 7. '
+                  'Remove a schedule or simplify the specific times.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
           const Divider(height: 32),
           Text(
             'Upcoming rotations',
@@ -165,21 +203,23 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
               describeCard(card),
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () => setState(() {
-                  if (card.raw == null) {
-                    card.raw = compileCard(card).first;
-                  } else {
-                    card.raw = null;
-                  }
-                }),
-                child: Text(
-                  card.raw != null ? 'Use builder' : 'Advanced (cron)',
+            // Raw cron editing is meaningless on pre-cron firmware.
+            if (widget.supportsCron)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => setState(() {
+                    if (card.raw == null) {
+                      card.raw = compileCard(card).first;
+                    } else {
+                      card.raw = null;
+                    }
+                  }),
+                  child: Text(
+                    card.raw != null ? 'Use builder' : 'Advanced (cron)',
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -200,7 +240,32 @@ class _RotationScheduleScreenState extends State<RotationScheduleScreen> {
     );
   }
 
+  // Simplified editor for pre-cron firmware: a single every-day interval.
+  Widget _buildIntervalSimple(ScheduleCard card) {
+    final items = _everyItemsFor(card.unit, card.every);
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _dropdown<int>(
+          label: 'Every',
+          value: items.contains(card.every) ? card.every : items.first,
+          items: {for (final v in items) v: '$v'},
+          onChanged: (v) => setState(() => card.every = v),
+        ),
+        _dropdown<String>(
+          label: 'Unit',
+          value: card.unit,
+          items: const {'minutes': 'minutes', 'hours': 'hours'},
+          onChanged: (v) => setState(() => card.unit = v),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBuilder(ScheduleCard card) {
+    if (!widget.supportsCron) return _buildIntervalSimple(card);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
