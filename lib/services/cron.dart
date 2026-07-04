@@ -175,8 +175,10 @@ String _hourRange(int fromHour, int toHour) {
 }
 
 List<String> compileCard(ScheduleCard c) {
+  // Advanced mode owns the card whenever raw is non-null — an emptied field
+  // must compile to an (invalid) empty rule, not the hidden builder state.
   final raw = c.raw;
-  if (raw != null && raw.trim().isNotEmpty) return [raw.trim()];
+  if (raw != null) return [raw.trim()];
   final dow = _daysToCron(c);
 
   if (c.mode == 'interval') {
@@ -188,7 +190,9 @@ List<String> compileCard(ScheduleCard c) {
     if (c.fromHour <= 0 && c.toHour >= 23) {
       hr = c.every > 1 ? '*/${c.every}' : '*';
     } else {
-      hr = '${_hourRange(c.fromHour, c.toHour)}/${c.every}';
+      // Always emit an explicit "a-b/n" range with a step: a bare "8/2" means
+      // "8 through 23 step 2" to cron, not the single hour 8.
+      hr = '${c.fromHour}-${c.toHour}/${c.every}';
     }
     return ['0 $hr $dow'];
   }
@@ -200,6 +204,7 @@ List<String> compileCard(ScheduleCard c) {
     final h = int.tryParse(parts[0]);
     final m = int.tryParse(parts[1]);
     if (h == null || m == null) continue;
+    if (h < 0 || h > 23 || m < 0 || m > 59) continue;
     byMinute.putIfAbsent(m, () => []).add(h);
   }
   final rules = <String>[];
