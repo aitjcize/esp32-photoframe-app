@@ -69,11 +69,17 @@ class DeviceProvider extends ChangeNotifier {
     _apiClient?.dispose();
     _device = device;
 
-    // Resolve .local hostname to IP for API requests
+    // Resolve .local hostname to IP for API requests. IPv4 only: the
+    // firmware also publishes an IPv6 link-local AAAA record, and a bare
+    // fe80:: address is unusable here (needs a scope ID, and would have to
+    // be bracketed in the URL).
     var apiHost = device.host;
     if (device.host.endsWith('.local')) {
       try {
-        final addresses = await InternetAddress.lookup(device.host);
+        final addresses = await InternetAddress.lookup(
+          device.host,
+          type: InternetAddressType.IPv4,
+        );
         if (addresses.isNotEmpty) {
           apiHost = addresses.first.address;
         }
