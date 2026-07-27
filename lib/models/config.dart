@@ -9,6 +9,15 @@ class DeviceConfig {
   final String timezone;
   final String ntpServer;
 
+  // Advanced network settings (#43). Old firmware doesn't have these keys;
+  // supportsStaticIp gates the UI so old devices render as before.
+  final bool supportsStaticIp;
+  final String ipMode; // "dhcp" or "static"
+  final String staticIp;
+  final String staticNetmask;
+  final String staticGateway;
+  final String dnsServer;
+
   // Auto Rotate
   final bool autoRotate;
   final List<String>
@@ -46,6 +55,12 @@ class DeviceConfig {
     required this.displayRotationDeg,
     required this.timezone,
     required this.ntpServer,
+    this.supportsStaticIp = false,
+    this.ipMode = 'dhcp',
+    this.staticIp = '',
+    this.staticNetmask = '255.255.255.0',
+    this.staticGateway = '',
+    this.dnsServer = '',
     required this.autoRotate,
     required this.rotateCron,
     this.supportsCron = true,
@@ -73,6 +88,15 @@ class DeviceConfig {
       displayRotationDeg: (json['display_rotation_deg'] as num?)?.toInt() ?? 0,
       timezone: json['timezone'] as String? ?? '',
       ntpServer: json['ntp_server'] as String? ?? '',
+      // Old firmware has no static IP / DNS support and no ip_mode key.
+      supportsStaticIp: json.containsKey('ip_mode'),
+      ipMode: json['ip_mode'] as String? ?? 'dhcp',
+      staticIp: json['static_ip'] as String? ?? '',
+      staticNetmask: (json['static_netmask'] as String?)?.isNotEmpty == true
+          ? json['static_netmask'] as String
+          : '255.255.255.0',
+      staticGateway: json['static_gateway'] as String? ?? '',
+      dnsServer: json['dns_server'] as String? ?? '',
       autoRotate: json['auto_rotate'] as bool? ?? false,
       // Prefer rotate_cron; fall back to a legacy rotate_interval (older
       // firmware) so the schedule still shows correctly, else the default.

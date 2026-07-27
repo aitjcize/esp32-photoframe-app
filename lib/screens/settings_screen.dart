@@ -91,19 +91,110 @@ class SettingsScreen extends StatelessWidget {
                     'timezone',
                   ),
                 ),
-                ListTile(
-                  title: const Text('NTP Server'),
-                  subtitle: Text(
-                    config.ntpServer.isEmpty ? 'Not set' : config.ntpServer,
-                  ),
-                  trailing: const Icon(Icons.edit),
-                  onTap: () => _editText(
-                    context,
-                    provider,
-                    'NTP Server',
-                    config.ntpServer,
-                    'ntp_server',
-                  ),
+                // Advanced network settings (#43), collapsed by default. The
+                // static IP / DNS entries render only when the firmware
+                // reports ip_mode; the NTP server exists on all firmware.
+                ExpansionTile(
+                  title: const Text('Advanced Network'),
+                  shape: const Border(),
+                  children: [
+                    ListTile(
+                      title: const Text('NTP Server'),
+                      subtitle: Text(
+                        config.ntpServer.isEmpty ? 'Not set' : config.ntpServer,
+                      ),
+                      trailing: const Icon(Icons.edit),
+                      onTap: () => _editText(
+                        context,
+                        provider,
+                        'NTP Server',
+                        config.ntpServer,
+                        'ntp_server',
+                      ),
+                    ),
+                    if (config.supportsStaticIp) ...[
+                      ListTile(
+                        title: const Text('IP Configuration'),
+                        subtitle: Text(
+                          config.ipMode == 'static'
+                              ? 'Static IP'
+                              : 'Automatic (DHCP)',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _showPicker(
+                          context,
+                          provider,
+                          'IP Configuration',
+                          'ip_mode',
+                          {'dhcp': 'Automatic (DHCP)', 'static': 'Static IP'},
+                        ),
+                      ),
+                      if (config.ipMode == 'static') ...[
+                        ListTile(
+                          title: const Text('IP Address'),
+                          subtitle: Text(
+                            config.staticIp.isEmpty
+                                ? 'Not set'
+                                : config.staticIp,
+                          ),
+                          trailing: const Icon(Icons.edit),
+                          onTap: () => _editText(
+                            context,
+                            provider,
+                            'IP Address',
+                            config.staticIp,
+                            'static_ip',
+                          ),
+                        ),
+                        ListTile(
+                          title: const Text('Netmask'),
+                          subtitle: Text(config.staticNetmask),
+                          trailing: const Icon(Icons.edit),
+                          onTap: () => _editText(
+                            context,
+                            provider,
+                            'Netmask',
+                            config.staticNetmask,
+                            'static_netmask',
+                          ),
+                        ),
+                        ListTile(
+                          title: const Text('Gateway'),
+                          subtitle: Text(
+                            config.staticGateway.isEmpty
+                                ? 'Not set'
+                                : config.staticGateway,
+                          ),
+                          trailing: const Icon(Icons.edit),
+                          onTap: () => _editText(
+                            context,
+                            provider,
+                            'Gateway',
+                            config.staticGateway,
+                            'static_gateway',
+                          ),
+                        ),
+                      ],
+                      ListTile(
+                        title: const Text('DNS Server'),
+                        subtitle: Text(
+                          config.dnsServer.isEmpty
+                              ? (config.ipMode == 'static'
+                                    ? 'Gateway (default)'
+                                    : 'Automatic (DHCP)')
+                              : config.dnsServer,
+                        ),
+                        trailing: const Icon(Icons.edit),
+                        onTap: () => _editText(
+                          context,
+                          provider,
+                          'DNS Server',
+                          config.dnsServer,
+                          'dns_server',
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
 
                 // === Auto Rotate ===

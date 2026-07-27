@@ -43,6 +43,14 @@ class _ProvisioningScreenState extends State<ProvisioningScreen>
   final _deviceNameController = TextEditingController(text: 'PhotoFrame');
   bool _obscurePassword = true;
 
+  // Advanced network settings (#43), collapsed by default.
+  bool _showAdvanced = false;
+  String _ipMode = 'dhcp';
+  final _staticIpController = TextEditingController();
+  final _staticNetmaskController = TextEditingController(text: '255.255.255.0');
+  final _staticGatewayController = TextEditingController();
+  final _dnsServerController = TextEditingController();
+
   bool get _isIOS => Platform.isIOS;
 
   @override
@@ -57,6 +65,10 @@ class _ProvisioningScreenState extends State<ProvisioningScreen>
     WidgetsBinding.instance.removeObserver(this);
     _passwordController.dispose();
     _deviceNameController.dispose();
+    _staticIpController.dispose();
+    _staticNetmaskController.dispose();
+    _staticGatewayController.dispose();
+    _dnsServerController.dispose();
     super.dispose();
   }
 
@@ -268,6 +280,16 @@ class _ProvisioningScreenState extends State<ProvisioningScreen>
               'deviceName': _deviceNameController.text.trim().isEmpty
                   ? 'PhotoFrame'
                   : _deviceNameController.text.trim(),
+              // Advanced network settings (#43); the firmware falls back to
+              // DHCP unless ipMode is exactly "static". Older firmware
+              // ignores the extra fields.
+              'ipMode': _ipMode,
+              if (_ipMode == 'static') ...{
+                'staticIp': _staticIpController.text.trim(),
+                'staticNetmask': _staticNetmaskController.text.trim(),
+                'staticGateway': _staticGatewayController.text.trim(),
+              },
+              'dnsServer': _dnsServerController.text.trim(),
             },
           )
           .timeout(const Duration(seconds: 20));
@@ -471,6 +493,76 @@ class _ProvisioningScreenState extends State<ProvisioningScreen>
                   hintText: 'PhotoFrame',
                 ),
               ),
+              const SizedBox(height: 8),
+              // Advanced network settings (#43), collapsed by default.
+              TextButton.icon(
+                onPressed: () => setState(() => _showAdvanced = !_showAdvanced),
+                icon: Icon(
+                  _showAdvanced ? Icons.expand_less : Icons.expand_more,
+                ),
+                label: const Text('Advanced network settings'),
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _ipMode,
+                  decoration: const InputDecoration(
+                    labelText: 'IP Configuration',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'dhcp',
+                      child: Text('Automatic (DHCP)'),
+                    ),
+                    DropdownMenuItem(value: 'static', child: Text('Static IP')),
+                  ],
+                  onChanged: (v) => setState(() => _ipMode = v ?? 'dhcp'),
+                ),
+                if (_ipMode == 'static') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _staticIpController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'IP Address',
+                      border: OutlineInputBorder(),
+                      hintText: '192.168.1.50',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _staticNetmaskController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Netmask',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _staticGatewayController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Gateway',
+                      border: OutlineInputBorder(),
+                      hintText: '192.168.1.1',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _dnsServerController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'DNS Server',
+                    border: const OutlineInputBorder(),
+                    hintText: _ipMode == 'static'
+                        ? 'Leave empty to use the gateway'
+                        : 'Optional; leave empty for DHCP-provided DNS',
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _submitCredentials,
