@@ -36,6 +36,89 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // Scale mode
   epaper.ScaleMode _scaleMode = epaper.ScaleMode.cover;
   String _backgroundColor = 'white';
+  // Whether the firmware supplied a layout default, and whether the user has
+  // touched the layout controls this session (their choice must never be
+  // silently replaced)
+  bool _deviceLayoutApplied = false;
+  bool _layoutTouched = false;
+
+  // Watches the device provider when the editor opened before its settings
+  // refresh finished, so a late-arriving layout default still applies
+  DeviceProvider? _settingsProvider;
+  VoidCallback? _settingsListener;
+
+  void _watchForDeviceSettings() {
+    final provider = context.read<DeviceProvider>();
+    _settingsProvider = provider;
+    _settingsListener = () {
+      final settings = _settingsProvider?.processingSettings;
+      if (settings == null) return;
+      _detachSettingsListener();
+      if (!mounted || _layoutTouched || _deviceLayoutApplied) return;
+      setState(() {
+        final mode = settings['scaleMode'] as String?;
+        if (mode != null) {
+          _scaleMode = mode == 'fit'
+              ? epaper.ScaleMode.fit
+              : epaper.ScaleMode.cover;
+          _deviceLayoutApplied = true;
+        }
+        final bg = settings['backgroundColor'] as String?;
+        if (bg != null && bg.isNotEmpty) {
+          _backgroundColor = _normalizeBackground(bg);
+        }
+      });
+      if (_deviceLayoutApplied) {
+        _onLayoutChanged();
+      }
+    };
+    provider.addListener(_settingsListener!);
+  }
+
+  void _detachSettingsListener() {
+    final listener = _settingsListener;
+    if (listener != null) {
+      _settingsProvider?.removeListener(listener);
+    }
+    _settingsListener = null;
+    _settingsProvider = null;
+  }
+
+  /// Only white and black letterbox backgrounds are supported; map any
+  /// legacy color name to the nearer of the two by luminance
+  String _normalizeBackground(String name) {
+    if (name == 'white' || name == 'black') return name;
+    const lightNames = {'yellow', 'green'};
+    return lightNames.contains(name) ? 'white' : 'black';
+  }
+
+  /// Compact color swatch for the background selector segments
+  Widget _bgSwatch(String name, Color color) => Semantics(
+    label: name,
+    child: Tooltip(
+      message: name,
+      child: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.black26),
+        ),
+      ),
+    ),
+  );
+
+  /// Preview color for the letterbox background: the PERCEIVED palette
+  /// color, so the live preview matches the processed preview (which
+  /// renders perceived colors) instead of jumping between ideal primaries
+  /// and panel colors
+  Color get _bgPreviewColor {
+    final perceived = _palette.perceived;
+    final c = _backgroundColor == 'black' ? perceived.black : perceived.white;
+    return Color.fromARGB(255, c.r, c.g, c.b);
+  }
+
   double _zoom = 1.0;
   double _panX = 0;
   double _panY = 0;
@@ -82,6 +165,27 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   Future<void> _loadDeviceSettings() async {
+    // Apply the device's configured layout before the editor becomes
+    // interactive; the user's per-image override never writes back to the
+    // device settings. Firmware that predates these settings reports
+    // neither key (see the post-decode aspect fallback). When the editor
+    // opened before the provider's settings refresh finished, watch for the
+    // late arrival instead of mistaking the cache miss for legacy firmware.
+    if (widget.initialSettings == null) {
+      _watchForDeviceSettings();
+    }
+    final deviceMode = widget.initialSettings?['scaleMode'] as String?;
+    if (deviceMode != null) {
+      _scaleMode = deviceMode == 'fit'
+          ? epaper.ScaleMode.fit
+          : epaper.ScaleMode.cover;
+      _deviceLayoutApplied = true;
+    }
+    final deviceBg = widget.initialSettings?['backgroundColor'] as String?;
+    if (deviceBg != null && deviceBg.isNotEmpty) {
+      _backgroundColor = _normalizeBackground(deviceBg);
+    }
+
     // Apply pre-fetched settings if available
     if (widget.initialSettings != null) {
       _applyFromJson(widget.initialSettings!);
@@ -138,13 +242,45 @@ class _PreviewScreenState extends State<PreviewScreen> {
       );
     }
 
-    // Auto-select scale mode based on image vs display orientation
-    if (_srcWidth > 0 && _srcHeight > 0) {
+    // The pre-fetched settings may have been null (background refresh not
+    // done yet at open); by decode time the provider may hold them -- a
+    // cache miss must not be mistaken for legacy firmware
+    if (!_deviceLayoutApplied && !_layoutTouched && mounted) {
+      final providerSettings = context
+          .read<DeviceProvider>()
+          .processingSettings;
+      final lateMode = providerSettings?['scaleMode'] as String?;
+      if (lateMode != null) {
+        _scaleMode = lateMode == 'fit'
+            ? epaper.ScaleMode.fit
+            : epaper.ScaleMode.cover;
+        _deviceLayoutApplied = true;
+      }
+      final lateBg = providerSettings?['backgroundColor'] as String?;
+      if (lateBg != null && lateBg.isNotEmpty) {
+        _backgroundColor = _normalizeBackground(lateBg);
+      }
+    }
+
+    // Firmware that predates the scaleMode setting supplied no layout
+    // default: keep the old aspect-based auto-select, but never replace a
+    // choice the user already made in the editor
+    if (!_deviceLayoutApplied &&
+        !_layoutTouched &&
+        _srcWidth > 0 &&
+        _srcHeight > 0) {
       final imageIsLandscape = _srcWidth > _srcHeight;
       final displayIsLandscape = fw > fh;
       if (imageIsLandscape != displayIsLandscape) {
         _scaleMode = epaper.ScaleMode.fit;
       }
+    }
+
+    // The user may have entered Custom mode while dimensions were still
+    // decoding; _initCustomZoomPan bailed out then, so give it its
+    // fit-and-center starting state now
+    if (_scaleMode == epaper.ScaleMode.custom && _zoom == 1.0) {
+      _initCustomZoomPan();
     }
 
     if (mounted) setState(() {});
@@ -280,7 +416,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     final containerWidth = MediaQuery.of(context).size.width - 32;
     final containerHeight = containerWidth * fh / fw;
 
-    final bgColor = _backgroundColor == 'black' ? Colors.black : Colors.white;
+    final bgColor = _bgPreviewColor;
 
     return SizedBox(
       width: containerWidth,
@@ -311,7 +447,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     // display-to-screen ratio
     final s = containerWidth / fw;
 
-    final bgColor = _backgroundColor == 'black' ? Colors.black : Colors.white;
+    final bgColor = _bgPreviewColor;
 
     // Image size and position in screen coords
     final imgW = _srcWidth * _zoom * s;
@@ -386,6 +522,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   @override
   void dispose() {
+    _detachSettingsListener();
     _debounce?.cancel();
     super.dispose();
   }
@@ -822,6 +959,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
             onSelectionChanged: (v) {
               _debounce?.cancel();
               final mode = v.first;
+              _layoutTouched = true;
               setState(() {
                 _scaleMode = mode;
                 if (mode == epaper.ScaleMode.custom) {
@@ -850,25 +988,31 @@ class _PreviewScreenState extends State<PreviewScreen> {
           // Background color (only for fit/custom)
           if (_scaleMode != epaper.ScaleMode.cover) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'Background',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const Spacer(),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'white', label: Text('White')),
-                    ButtonSegment(value: 'black', label: Text('Black')),
-                  ],
-                  selected: {_backgroundColor},
-                  onSelectionChanged: (v) {
-                    setState(() => _backgroundColor = v.first);
-                    _onLayoutChanged();
-                  },
-                ),
-              ],
+            Text('Background', style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            // Compact swatches on their own scrollable line: six labelled
+            // segments overflow typical phone widths inside a Row
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<String>(
+                // Only white and black letterbox backgrounds are supported
+                segments: [
+                  ButtonSegment(
+                    value: 'white',
+                    label: _bgSwatch('White', Colors.white),
+                  ),
+                  ButtonSegment(
+                    value: 'black',
+                    label: _bgSwatch('Black', Colors.black),
+                  ),
+                ],
+                selected: {_backgroundColor},
+                onSelectionChanged: (v) {
+                  _layoutTouched = true;
+                  setState(() => _backgroundColor = v.first);
+                  _onLayoutChanged();
+                },
+              ),
             ),
           ],
           const SizedBox(height: 16),
