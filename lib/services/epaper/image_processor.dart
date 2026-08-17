@@ -476,33 +476,49 @@ void preprocessImage(
     );
   }
 
-  // 4. Compress dynamic range to display's actual luminance range
+  // 4. Compress dynamic range into the display's measured black..white
+  // range. Per-channel in linear light (relative colorimetric intent): each
+  // channel is remapped onto [measured_black_c, measured_white_c], so pure
+  // white lands exactly on the panel's white point and dithers with zero
+  // error -- no colored speckle on white backgrounds. Mirrors
+  // epaper-image-convert's implementation.
   if (params.compressDynamicRange) {
-    final blackL = rgbToLab(
-      perceived.black.r.toDouble(),
-      perceived.black.g.toDouble(),
-      perceived.black.b.toDouble(),
-    )[0];
-    final whiteL = rgbToLab(
-      perceived.white.r.toDouble(),
-      perceived.white.g.toDouble(),
-      perceived.white.b.toDouble(),
-    )[0];
+    final luts = [
+      _cdrChannelLut(perceived.black.r, perceived.white.r),
+      _cdrChannelLut(perceived.black.g, perceived.white.g),
+      _cdrChannelLut(perceived.black.b, perceived.white.b),
+    ];
 
     final d = buf.data;
     for (var i = 0; i < d.length; i += 4) {
-      final lab = rgbToLab(
-        d[i].toDouble(),
-        d[i + 1].toDouble(),
-        d[i + 2].toDouble(),
-      );
-      final compressedL = blackL + (lab[0] / 100) * (whiteL - blackL);
-      final rgb = labToRgb(compressedL, lab[1], lab[2]);
-      d[i] = rgb[0];
-      d[i + 1] = rgb[1];
-      d[i + 2] = rgb[2];
+      d[i] = luts[0][d[i]];
+      d[i + 1] = luts[1][d[i + 1]];
+      d[i + 2] = luts[2][d[i + 2]];
     }
   }
+}
+
+double _srgbToLinearChannel(int v) {
+  final c = v / 255.0;
+  return c > 0.04045
+      ? math.pow((c + 0.055) / 1.055, 2.4).toDouble()
+      : c / 12.92;
+}
+
+int _linearToSrgbChannel(double l) {
+  final c = l > 0.0031308 ? 1.055 * math.pow(l, 1.0 / 2.4) - 0.055 : 12.92 * l;
+  return (c * 255.0).round().clamp(0, 255);
+}
+
+/// sRGB byte in -> dynamic-range-compressed sRGB byte out, for one channel
+Uint8List _cdrChannelLut(int black, int white) {
+  final blackLin = _srgbToLinearChannel(black);
+  final range = _srgbToLinearChannel(white) - blackLin;
+  final lut = Uint8List(256);
+  for (var v = 0; v < 256; v++) {
+    lut[v] = _linearToSrgbChannel(blackLin + _srgbToLinearChannel(v) * range);
+  }
+  return lut;
 }
 
 // ============================================================
