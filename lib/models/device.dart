@@ -3,16 +3,40 @@ class Device {
   final String host;
   final int port;
 
-  const Device({required this.name, required this.host, this.port = 80});
+  /// Password for the frame's own HTTP API (esp32-photoframe #130). Empty when
+  /// the frame does not ask for one, which is the firmware default.
+  final String password;
+
+  const Device({
+    required this.name,
+    required this.host,
+    this.port = 80,
+    this.password = '',
+  });
 
   String get baseUrl => 'http://$host:$port';
 
-  Map<String, dynamic> toJson() => {'name': name, 'host': host, 'port': port};
+  Device copyWith({String? name, String? password}) => Device(
+    name: name ?? this.name,
+    host: host,
+    port: port,
+    password: password ?? this.password,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'host': host,
+    'port': port,
+    // Omitted rather than written empty, so a frame with no password leaves
+    // no password-shaped entry behind.
+    if (password.isNotEmpty) 'password': password,
+  };
 
   factory Device.fromJson(Map<String, dynamic> json) => Device(
     name: json['name'] as String,
     host: json['host'] as String,
     port: json['port'] as int? ?? 80,
+    password: json['password'] as String? ?? '',
   );
 
   @override

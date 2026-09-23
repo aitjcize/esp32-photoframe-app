@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:nsd/nsd.dart' as nsd;
 
 import '../models/device.dart';
+import 'api_client.dart';
 
 class DeviceDiscovery {
   nsd.Discovery? _discovery;
@@ -71,9 +72,12 @@ class DeviceDiscovery {
               'http://${device.host}:${device.port}/api/time',
             );
             final response = await client
-                .get(uri)
+                .get(uri, headers: frameAuthHeaders(device.password))
                 .timeout(const Duration(seconds: 3));
-            if (response.statusCode == 200) {
+            // 401 still proves the frame is up: it answered, it just wants a
+            // password we do not have (or no longer have). Calling it offline
+            // would hide it behind the wrong problem.
+            if (response.statusCode == 200 || response.statusCode == 401) {
               online.add(device.host);
             }
           } catch (_) {

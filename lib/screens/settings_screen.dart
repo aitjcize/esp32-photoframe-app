@@ -21,7 +21,14 @@ class SettingsScreen extends StatelessWidget {
     final battery = provider.batteryInfo;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        bottom: provider.needsPassword
+            ? _PasswordBanner(
+                onEnter: () => _editFramePassword(context, provider),
+              )
+            : null,
+      ),
       body: config == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -428,6 +435,17 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                 ListTile(
+                  title: const Text('Frame Password'),
+                  subtitle: Text(
+                    provider.hasPassword
+                        ? 'Saved \u2022 sent with every request'
+                        : 'Not set',
+                  ),
+                  leading: const Icon(Icons.lock_outline),
+                  trailing: const Icon(Icons.edit),
+                  onTap: () => _editFramePassword(context, provider),
+                ),
+                ListTile(
                   title: const Text('Export Config'),
                   leading: const Icon(Icons.download),
                   onTap: () => _exportConfig(context, provider),
@@ -570,6 +588,63 @@ class SettingsScreen extends StatelessWidget {
           FilledButton(
             onPressed: () {
               provider.updateConfig({key: controller.text.trim()});
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The password this app sends to the frame's own HTTP API
+  /// (esp32-photoframe #130). It is kept with the saved device, not pushed to
+  /// the frame -- the frame's password is set on its own web interface. The
+  /// field is write-only: the frame never reports the password back, so there
+  /// is nothing to prefill.
+  void _editFramePassword(BuildContext context, DeviceProvider provider) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Frame Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Only needed when password protection is enabled on the frame\'s '
+              'own web interface. Stored on this phone and sent with every '
+              'request to this frame.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'New password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (provider.hasPassword)
+            TextButton(
+              onPressed: () {
+                provider.setPassword('');
+                Navigator.pop(context);
+              },
+              child: const Text('Clear'),
+            ),
+          FilledButton(
+            onPressed: () {
+              provider.setPassword(controller.text);
               Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -1120,6 +1195,48 @@ class _OtaSectionState extends State<_OtaSection> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Shown while the frame is refusing our password. Only the gallery navigates
+/// away on a 401, and Settings replaces it, so a password changed on the frame
+/// while this screen is open has to be surfaced here -- otherwise every edit
+/// just fails. Saving a password clears [DeviceProvider.needsPassword], and
+/// with it this banner.
+class _PasswordBanner extends StatelessWidget implements PreferredSizeWidget {
+  const _PasswordBanner({required this.onEnter});
+
+  final VoidCallback onEnter;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(64);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: SizedBox(
+        height: preferredSize.height,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Icon(Icons.lock_outline, color: scheme.onErrorContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'The frame wants a password. Changes here fail until it is '
+                  'entered.',
+                  style: TextStyle(color: scheme.onErrorContainer),
+                ),
+              ),
+              TextButton(onPressed: onEnter, child: const Text('Enter')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

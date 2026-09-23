@@ -116,6 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         imageUrl: provider.apiClient!.getImageUrl(
                           provider.currentImage!,
                         ),
+                        httpHeaders: provider.apiClient!.imageHeaders,
                         fit: BoxFit.cover,
                         placeholder: (_, _) =>
                             const Center(child: CircularProgressIndicator()),

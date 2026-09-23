@@ -7,12 +7,60 @@ import '../models/album.dart';
 import '../models/config.dart';
 import '../models/device.dart';
 
+/// The frame ignores the username; the password is the whole credential.
+const String _authUsername = 'photoframe';
+
+/// Basic-auth header for a frame whose HTTP API is password-protected
+/// (esp32-photoframe #130). Empty when [password] is empty: the firmware
+/// leaves the API open by default and those frames must keep working.
+Map<String, String> frameAuthHeaders(String password) => password.isEmpty
+    ? const {}
+    : {
+        'authorization':
+            'Basic ${base64Encode(utf8.encode('$_authUsername:$password'))}',
+      };
+
+/// Wraps an [http.Client] and attaches the frame's password to everything that
+/// passes through it. Doing it here rather than at each call site means a
+/// request added later cannot silently go out unauthenticated -- [ApiClient]
+/// already makes more than twenty, including multipart uploads that build
+/// their request object by hand.
+class _AuthenticatedClient extends http.BaseClient {
+  _AuthenticatedClient(this._inner, this._headers);
+
+  final http.Client _inner;
+  final Map<String, String> _headers;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers.addAll(_headers);
+    return _inner.send(request);
+  }
+
+  @override
+  void close() => _inner.close();
+}
+
 class ApiClient {
   final String baseUrl;
+
+  /// Password for the frame's own HTTP API. Empty means the frame is open.
+  final String password;
+
   final http.Client _client;
 
-  ApiClient({required this.baseUrl, http.Client? client})
-    : _client = client ?? http.Client();
+  ApiClient({required this.baseUrl, this.password = '', http.Client? client})
+    : _client = password.isEmpty
+          ? (client ?? http.Client())
+          : _AuthenticatedClient(
+              client ?? http.Client(),
+              frameAuthHeaders(password),
+            );
+
+  /// Headers for fetching a device image from outside this client: the image
+  /// widgets are handed [getImageUrl] and do their own fetching, so they never
+  /// pass through the wrapper above.
+  Map<String, String> get imageHeaders => frameAuthHeaders(password);
 
   void dispose() {
     _client.close();
@@ -270,6 +318,9 @@ class ApiException implements Exception {
   final String body;
 
   const ApiException(this.statusCode, this.body);
+
+  /// The frame demands a password (or rejected the one we sent).
+  bool get isUnauthorized => statusCode == 401;
 
   @override
   String toString() => 'ApiException($statusCode): $body';

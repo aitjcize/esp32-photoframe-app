@@ -9,10 +9,12 @@ import '../models/album.dart';
 import '../models/config.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
+import '../services/saved_devices.dart';
 
 class DeviceProvider extends ChangeNotifier {
   Device? _device;
   ApiClient? _apiClient;
+  String? _apiBaseUrl;
   SystemInfo? _systemInfo;
   BatteryInfo? _batteryInfo;
   SensorInfo? _sensorInfo;
@@ -25,12 +27,20 @@ class DeviceProvider extends ChangeNotifier {
   Timer? _backgroundRefreshTimer;
   int _keepAliveFailures = 0;
   bool _deviceOffline = false;
+  bool _needsPassword = false;
 
   // Cached device settings (refreshed every 5 min)
   Map<String, dynamic>? _processingSettings;
   Map<String, dynamic>? _paletteSettings;
 
   bool get deviceOffline => _deviceOffline;
+
+  /// The frame answered 401: it has a password and the one we hold is missing
+  /// or stale. Distinct from [deviceOffline], which means unreachable.
+  bool get needsPassword => _needsPassword;
+
+  /// Whether a password is stored for the connected frame.
+  bool get hasPassword => _device?.password.isNotEmpty ?? false;
   Map<String, dynamic>? get processingSettings => _processingSettings;
   Map<String, dynamic>? get paletteSettings => _paletteSettings;
 
@@ -88,10 +98,12 @@ class DeviceProvider extends ChangeNotifier {
       }
     }
 
-    _apiClient = ApiClient(baseUrl: 'http://$apiHost:${device.port}');
+    _apiBaseUrl = 'http://$apiHost:${device.port}';
+    _apiClient = ApiClient(baseUrl: _apiBaseUrl!, password: device.password);
     _error = null;
     _keepAliveFailures = 0;
     _deviceOffline = false;
+    _needsPassword = false;
     _startKeepAlive();
     notifyListeners();
   }
@@ -104,12 +116,35 @@ class DeviceProvider extends ChangeNotifier {
     connectToDevice(Device(name: host, host: host, port: port));
   }
 
+  /// Change the password sent to the connected frame, and persist it with the
+  /// saved device so the next connection starts out authenticated. The frame
+  /// never hands the password back, so this is the only way it is learned.
+  Future<void> setPassword(String password) async {
+    final device = _device;
+    final baseUrl = _apiBaseUrl;
+    if (device == null || baseUrl == null) return;
+    _device = device.copyWith(password: password);
+    _apiClient?.dispose();
+    _apiClient = ApiClient(baseUrl: baseUrl, password: password);
+    _needsPassword = false;
+    _deviceOffline = false;
+    _keepAliveFailures = 0;
+    notifyListeners();
+    // Anything that failed under the old password (Settings may still be
+    // waiting on its config) would otherwise wait for the 5-minute refresh.
+    // This also re-flags a wrong password straight away.
+    unawaited(_refreshSettingsInBackground());
+    await SavedDevices.addDevice(_device!);
+  }
+
   void disconnect() {
     _stopKeepAlive();
     _keepAliveFailures = 0;
     _deviceOffline = false;
+    _needsPassword = false;
     _apiClient?.dispose();
     _apiClient = null;
+    _apiBaseUrl = null;
     _device = null;
     _systemInfo = null;
     _batteryInfo = null;
@@ -142,15 +177,33 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> _sendKeepAlive() async {
-    if (_apiClient == null) return;
+    final client = _apiClient;
+    if (client == null) return;
     try {
-      await _apiClient!.keepAlive().timeout(const Duration(seconds: 5));
+      await client.keepAlive().timeout(const Duration(seconds: 5));
+      // Answered by a client setPassword or a reconnect has since replaced:
+      // says nothing about the current one.
+      if (!identical(client, _apiClient)) return;
       _keepAliveFailures = 0;
-      if (_deviceOffline) {
+      // A success also means the password (if any) is accepted again.
+      if (_deviceOffline || _needsPassword) {
         _deviceOffline = false;
+        _needsPassword = false;
         notifyListeners();
       }
-    } catch (_) {
+    } catch (e) {
+      if (!identical(client, _apiClient)) return;
+      // A 401 is definitive -- the frame is up, it just wants a password we do
+      // not have. Report it at once instead of burning the retry budget and
+      // then calling a reachable frame offline.
+      if (e is ApiException && e.isUnauthorized) {
+        _keepAliveFailures = 0;
+        if (!_needsPassword) {
+          _markNeedsPassword();
+          notifyListeners();
+        }
+        return;
+      }
       _keepAliveFailures++;
       if (_keepAliveFailures >= 2 && !_deviceOffline) {
         _deviceOffline = true;
@@ -159,25 +212,46 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
+  /// The frame answered 401. It is reachable, but nothing works until the
+  /// password is fixed, so it is reported through [deviceOffline] as well --
+  /// that is what sends the gallery back to the device list, where the
+  /// password is asked for -- with [needsPassword] saying why.
+  void _markNeedsPassword() {
+    _needsPassword = true;
+    _deviceOffline = true;
+  }
+
   Future<void> _refreshSettingsInBackground() async {
-    if (_apiClient == null) return;
+    final client = _apiClient;
+    if (client == null) return;
     try {
       final results = await Future.wait([
-        _apiClient!.getProcessingSettings().timeout(const Duration(seconds: 5)),
-        _apiClient!.getPaletteSettings().timeout(const Duration(seconds: 5)),
-        _apiClient!.getConfig().timeout(const Duration(seconds: 5)),
+        client.getProcessingSettings().timeout(const Duration(seconds: 5)),
+        client.getPaletteSettings().timeout(const Duration(seconds: 5)),
+        client.getConfig().timeout(const Duration(seconds: 5)),
       ]);
       _processingSettings = results[0] as Map<String, dynamic>;
       _paletteSettings = results[1] as Map<String, dynamic>;
       _config = DeviceConfig.fromJson(results[2] as Map<String, dynamic>);
       notifyListeners();
-    } catch (_) {
-      // Silently ignore — cached values remain
+    } catch (e) {
+      // A 401 is reported like the keep-alive's; anything else is ignored
+      // and the cached values remain.
+      // A 401 from a client since replaced by setPassword says nothing about
+      // the new password.
+      if (e is ApiException &&
+          e.isUnauthorized &&
+          identical(client, _apiClient) &&
+          !_needsPassword) {
+        _markNeedsPassword();
+        notifyListeners();
+      }
     }
   }
 
   Future<void> refreshAll() async {
-    if (_apiClient == null) return;
+    final client = _apiClient;
+    if (client == null) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -186,12 +260,11 @@ class DeviceProvider extends ChangeNotifier {
       _systemInfo = await _apiClient!.getSystemInfo();
       // Update device name from system info
       if (_systemInfo != null && _device != null) {
-        _device = Device(
+        // copyWith, so the stored password survives the rename.
+        _device = _device!.copyWith(
           name: _systemInfo!.deviceName.isNotEmpty
               ? _systemInfo!.deviceName
               : _device!.host,
-          host: _device!.host,
-          port: _device!.port,
         );
       }
       await Future.wait([
@@ -201,6 +274,15 @@ class DeviceProvider extends ChangeNotifier {
         _refreshCurrentImage(),
       ]);
     } catch (e) {
+      // Same as the keep-alive path: raise it now, so the gallery goes back
+      // to the device list to ask, rather than sitting on a failing screen
+      // until the next keep-alive notices. Not if the client has been
+      // replaced meanwhile (new password, other frame): the 401 is stale.
+      if (e is ApiException &&
+          e.isUnauthorized &&
+          identical(client, _apiClient)) {
+        _markNeedsPassword();
+      }
       _error = e.toString();
     } finally {
       _loading = false;

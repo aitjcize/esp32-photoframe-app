@@ -210,6 +210,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
         ? '${image.album}/${image.thumbnail}'
         : image.filepath;
     final imageUrl = provider.apiClient!.getImageUrl(thumbPath);
+    final imageHeaders = provider.apiClient!.imageHeaders;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -222,6 +223,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
               borderRadius: BorderRadius.circular(8),
               child: CachedNetworkImage(
                 imageUrl: imageUrl,
+                httpHeaders: imageHeaders,
                 fit: BoxFit.contain,
                 placeholder: (_, _) => const SizedBox(
                   height: 100,
@@ -462,13 +464,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
     // Navigate back if device goes offline (once only)
     if (provider.deviceOffline && !_navigatingAway) {
       _navigatingAway = true;
+      // Read before disconnect(), which clears it. A frame that started asking
+      // for a password is not offline, and saying so would send the owner
+      // chasing the wrong fault.
+      final needsPassword = provider.needsPassword;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           provider.disconnect();
           context.go('/devices');
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Device went offline')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                needsPassword
+                    ? 'This frame needs a password \u2014 tap it to enter one'
+                    : 'Device went offline',
+              ),
+            ),
+          );
         }
       });
     }
@@ -610,6 +622,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         final imageUrl = provider.apiClient!.getImageUrl(
                           thumbPath,
                         );
+                        final imageHeaders = provider.apiClient!.imageHeaders;
                         final isSelected = _selectedImages.contains(
                           image.filepath,
                         );
@@ -635,6 +648,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                             children: [
                               CachedNetworkImage(
                                 imageUrl: imageUrl,
+                                httpHeaders: imageHeaders,
                                 fit: BoxFit.cover,
                                 placeholder: (_, _) => Container(
                                   color: Theme.of(

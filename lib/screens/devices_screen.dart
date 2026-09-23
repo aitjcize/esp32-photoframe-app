@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/device.dart';
 import '../providers/device_provider.dart';
+import '../services/api_client.dart';
 import '../services/device_discovery.dart';
 import '../services/saved_devices.dart';
 import 'provisioning_screen.dart';
@@ -55,8 +56,65 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _connectToDevice(Device device) async {
-    // Show connecting spinner
-    if (!mounted) return;
+    // A frame may require a password on its own HTTP API
+    // (esp32-photoframe #130). We only learn that from the 401, so connect,
+    // and ask for the password when the frame demands one -- also when a
+    // saved frame has had a password set (or changed) since it was added.
+    var candidate = device;
+    while (true) {
+      if (!mounted) return;
+      _showConnectingDialog();
+
+      final provider = context.read<DeviceProvider>();
+      // Resolve hostname and check if device is online
+      await provider.connectToDevice(candidate);
+      SystemInfo sysInfo;
+      try {
+        sysInfo = await provider.apiClient!.getSystemInfo().timeout(
+          const Duration(seconds: 5),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context); // dismiss spinner
+        if (e is ApiException && e.isUnauthorized) {
+          final password = await _promptForPassword(
+            candidate,
+            rejected: candidate.password.isNotEmpty,
+          );
+          if (password == null || password.isEmpty) {
+            provider.disconnect();
+            return;
+          }
+          candidate = candidate.copyWith(password: password);
+          continue;
+        }
+        provider.disconnect();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Device is offline or unreachable')),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // dismiss spinner
+      // Save with original host (mDNS name), not resolved IP
+      await SavedDevices.addDevice(
+        Device(
+          name: sysInfo.deviceName.isNotEmpty
+              ? sysInfo.deviceName
+              : candidate.name,
+          host: candidate.host,
+          port: candidate.port,
+          password: candidate.password,
+        ),
+      );
+      if (!mounted) return;
+      context.go('/gallery');
+      return;
+    }
+  }
+
+  void _showConnectingDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -79,42 +137,67 @@ class _DevicesScreenState extends State<DevicesScreen> {
         ),
       ),
     );
+  }
 
-    // Resolve hostname and check if device is online
-    final provider = context.read<DeviceProvider>();
-    await provider.connectToDevice(device);
-    try {
-      final sysInfo = await provider.apiClient!.getSystemInfo().timeout(
-        const Duration(seconds: 5),
-      );
-      if (!mounted) return;
-      Navigator.pop(context); // dismiss spinner
-      // Save with original host (mDNS name), not resolved IP
-      await SavedDevices.addDevice(
-        Device(
-          name: sysInfo.deviceName.isNotEmpty
-              ? sysInfo.deviceName
-              : device.name,
-          host: device.host,
-          port: device.port,
+  /// Asks for the frame's HTTP API password. Returns null when cancelled. The
+  /// field is write-only: the frame never reports the password back, so there
+  /// is nothing to prefill even when one is already stored.
+  Future<String?> _promptForPassword(Device device, {required bool rejected}) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Password Required'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              rejected
+                  ? '${device.name} rejected the saved password. Enter the '
+                        "password set on the frame's own web interface."
+                  : '${device.name} is password-protected. Enter the password '
+                        "set on the frame's own web interface.",
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Frame password',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ],
         ),
-      );
-      if (!mounted) return;
-      context.go('/gallery');
-    } catch (_) {
-      if (!mounted) return;
-      Navigator.pop(context); // dismiss spinner
-      provider.disconnect();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Device is offline or unreachable')),
-      );
-    }
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _connectManual(String host) {
     if (host.isEmpty) return;
-    final device = Device(name: host, host: host);
-    _connectToDevice(device);
+    // Reuse the password already saved for this host, so reaching a known
+    // frame by typing its address does not mean typing its password too.
+    final saved = _savedDevices.indexWhere((d) => d.host == host);
+    _connectToDevice(
+      Device(
+        name: host,
+        host: host,
+        password: saved >= 0 ? _savedDevices[saved].password : '',
+      ),
+    );
   }
 
   void _showManualConnectDialog() {
