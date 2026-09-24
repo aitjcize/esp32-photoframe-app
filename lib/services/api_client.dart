@@ -308,19 +308,37 @@ class ApiClient {
 
   void _checkResponse(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(response.statusCode, response.body);
+      throw ApiException(
+        response.statusCode,
+        response.body,
+        retryAfter: parseRetryAfter(response.headers['retry-after']),
+      );
     }
   }
+}
+
+/// A Retry-After given in seconds, as the frame's lockout sends it. The
+/// HTTP-date form is never sent by the frame and is not parsed.
+Duration? parseRetryAfter(String? value) {
+  final seconds = int.tryParse(value?.trim() ?? '');
+  return seconds == null || seconds < 0 ? null : Duration(seconds: seconds);
 }
 
 class ApiException implements Exception {
   final int statusCode;
   final String body;
 
-  const ApiException(this.statusCode, this.body);
+  /// How long the frame asked us to wait, from its Retry-After header.
+  final Duration? retryAfter;
+
+  const ApiException(this.statusCode, this.body, {this.retryAfter});
 
   /// The frame demands a password (or rejected the one we sent).
   bool get isUnauthorized => statusCode == 401;
+
+  /// The frame is refusing this client for a while after too many wrong
+  /// passwords (esp32-photoframe #130).
+  bool get isRateLimited => statusCode == 429;
 
   @override
   String toString() => 'ApiException($statusCode): $body';

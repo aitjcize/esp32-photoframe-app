@@ -11,7 +11,38 @@ import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/saved_devices.dart';
 
+/// Builds the client for a frame. Tests swap in one backed by a mock.
+typedef ApiClientFactory =
+    ApiClient Function({required String baseUrl, required String password});
+
+ApiClient _defaultApiClient({
+  required String baseUrl,
+  required String password,
+}) => ApiClient(baseUrl: baseUrl, password: password);
+
+/// Why changing the frame's own password failed. [message] is written for the
+/// user. [applied] is true when the frame did take the new password and only
+/// confirming it afterwards failed: the app then holds the new password, since
+/// the old one no longer works.
+class FramePasswordException implements Exception {
+  const FramePasswordException(this.message, {this.applied = false});
+
+  final String message;
+  final bool applied;
+
+  @override
+  String toString() => message;
+}
+
 class DeviceProvider extends ChangeNotifier {
+  DeviceProvider({ApiClientFactory apiClientFactory = _defaultApiClient})
+    : _newApiClient = apiClientFactory;
+
+  final ApiClientFactory _newApiClient;
+
+  /// The firmware refuses longer passwords (esp32-photoframe #130).
+  static const int maxFramePasswordBytes = 63;
+
   Device? _device;
   ApiClient? _apiClient;
   String? _apiBaseUrl;
@@ -28,6 +59,12 @@ class DeviceProvider extends ChangeNotifier {
   int _keepAliveFailures = 0;
   bool _deviceOffline = false;
   bool _needsPassword = false;
+
+  /// Set while [changeFramePassword] waits on the frame. Once the frame
+  /// applies the new password, requests still in flight with the old one are
+  /// answered 401; those must not raise [needsPassword] for a password that
+  /// is being replaced on purpose.
+  bool _changingPassword = false;
 
   // Cached device settings (refreshed every 5 min)
   Map<String, dynamic>? _processingSettings;
@@ -77,6 +114,9 @@ class DeviceProvider extends ChangeNotifier {
   Future<void> connectToDevice(Device device) async {
     _stopKeepAlive();
     _apiClient?.dispose();
+    // Settings shown for the previous frame say nothing about this one, and
+    // would offer it options its firmware may not have.
+    if (_device != device) _config = null;
     _device = device;
 
     // Resolve .local hostname to IP for API requests. IPv4 only: the
@@ -99,7 +139,10 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     _apiBaseUrl = 'http://$apiHost:${device.port}';
-    _apiClient = ApiClient(baseUrl: _apiBaseUrl!, password: device.password);
+    _apiClient = _newApiClient(
+      baseUrl: _apiBaseUrl!,
+      password: device.password,
+    );
     _error = null;
     _keepAliveFailures = 0;
     _deviceOffline = false;
@@ -119,22 +162,231 @@ class DeviceProvider extends ChangeNotifier {
   /// Change the password sent to the connected frame, and persist it with the
   /// saved device so the next connection starts out authenticated. The frame
   /// never hands the password back, so this is the only way it is learned.
+  /// The frame itself is left alone; see [changeFramePassword] for that.
   Future<void> setPassword(String password) async {
     final device = _device;
     final baseUrl = _apiBaseUrl;
     if (device == null || baseUrl == null) return;
-    _device = device.copyWith(password: password);
-    _apiClient?.dispose();
-    _apiClient = ApiClient(baseUrl: baseUrl, password: password);
-    _needsPassword = false;
-    _deviceOffline = false;
-    _keepAliveFailures = 0;
+    _adoptPassword(device, baseUrl, password);
     notifyListeners();
     // Anything that failed under the old password (Settings may still be
     // waiting on its config) would otherwise wait for the 5-minute refresh.
     // This also re-flags a wrong password straight away.
     unawaited(_refreshSettingsInBackground());
     await SavedDevices.addDevice(_device!);
+  }
+
+  /// Switch to a new client that sends [password], and clear whatever the old
+  /// one had flagged. Callers notify and persist.
+  void _adoptPassword(Device device, String baseUrl, String password) {
+    _device = device.copyWith(password: password);
+    _apiClient?.dispose();
+    _apiClient = _newApiClient(baseUrl: baseUrl, password: password);
+    _needsPassword = false;
+    _deviceOffline = false;
+    _keepAliveFailures = 0;
+  }
+
+  /// Set, change or (with an empty [newPassword]) remove the password on the
+  /// frame's own HTTP API, then switch this app over to it.
+  ///
+  /// The order keeps the app from ever holding a password the frame does not:
+  /// the change is sent with the current password, the app switches only once
+  /// the frame has accepted it, and the new password is then tried by reading
+  /// the config back. If the frame refuses the change or cannot be reached,
+  /// the app keeps the old password. Throws [FramePasswordException].
+  Future<void> changeFramePassword(String newPassword) async {
+    final device = _device;
+    final baseUrl = _apiBaseUrl;
+    final client = _apiClient;
+    if (device == null || baseUrl == null || client == null) {
+      throw const FramePasswordException('Not connected to a frame.');
+    }
+    // The frame keeps the password as a C string: it would keep only what
+    // comes before a NUL, and never match the whole one the app then sends.
+    if (newPassword.contains('\u0000')) {
+      throw const FramePasswordException(
+        'The password cannot contain a NUL character.',
+      );
+    }
+    if (utf8.encode(newPassword).length > maxFramePasswordBytes) {
+      throw const FramePasswordException(
+        'The password is too long: the frame accepts at most '
+        '$maxFramePasswordBytes bytes.',
+      );
+    }
+
+    _changingPassword = true;
+    try {
+      try {
+        await client
+            .updateConfig({'http_password': newPassword})
+            .timeout(_passwordRequestTimeout);
+      } on ApiException catch (e) {
+        // The saved password is wrong: raise the banner, as any other request
+        // would, so it leads straight to entering the right one.
+        if (e.isUnauthorized &&
+            identical(client, _apiClient) &&
+            !_needsPassword) {
+          _markNeedsPassword();
+          notifyListeners();
+        }
+        throw FramePasswordException(_describeRefusal(e));
+      } catch (_) {
+        // No answer. The frame may still have applied it before the reply
+        // was lost; ask it with the new password before giving up on it.
+        if (!await _frameUses(baseUrl, newPassword)) {
+          throw const FramePasswordException(
+            'Could not reach the frame. The app still uses the old password. '
+            'If the frame applied the change anyway and starts asking for a '
+            "password, enter the new one with \"I already know the frame's "
+            'password".',
+          );
+        }
+      }
+
+      // The frame now wants the new password. Switch before anything else
+      // can fail, so the app never goes on sending the one it dropped.
+      final current = _device;
+      final currentBaseUrl = _apiBaseUrl;
+      final stillConnected =
+          current != null && current == device && currentBaseUrl != null;
+      if (stillConnected) {
+        _adoptPassword(current, currentBaseUrl, newPassword);
+        notifyListeners();
+      }
+      // Saved even if the user has since moved to another frame, so that
+      // frame's entry stays usable.
+      try {
+        await SavedDevices.addDevice(
+          stillConnected ? _device! : device.copyWith(password: newPassword),
+        );
+      } catch (_) {
+        throw const FramePasswordException(
+          'The frame took the new password, but this app could not save it. '
+          "If the frame asks for it later, enter it with \"I already know "
+          "the frame's password\".",
+          applied: true,
+        );
+      }
+      if (!stillConnected) return;
+    } finally {
+      _changingPassword = false;
+    }
+
+    // Try the new password straight away rather than leave it to the next
+    // keep-alive, and pick up the frame's view of protection on or off.
+    final confirmClient = _apiClient!;
+    final DeviceConfig config;
+    try {
+      config = await confirmClient.getConfig().timeout(_passwordRequestTimeout);
+    } catch (e) {
+      // Refused with the new password: if the old one still works, the frame
+      // did not keep the change after all, so go back to it.
+      if (e is ApiException &&
+          e.isUnauthorized &&
+          identical(confirmClient, _apiClient) &&
+          await _frameUses(_apiBaseUrl!, device.password)) {
+        if (identical(confirmClient, _apiClient)) {
+          _adoptPassword(_device!, _apiBaseUrl!, device.password);
+          notifyListeners();
+          try {
+            await SavedDevices.addDevice(_device!);
+          } catch (_) {}
+        }
+        throw const FramePasswordException(
+          'The frame did not keep the new password. The app still uses the '
+          'old one.',
+        );
+      }
+      if (e is ApiException &&
+          e.isUnauthorized &&
+          identical(confirmClient, _apiClient) &&
+          !_needsPassword) {
+        _markNeedsPassword();
+        notifyListeners();
+      }
+      throw const FramePasswordException(
+        'The frame accepted the new password, but reading its settings back '
+        'with it failed.',
+        applied: true,
+      );
+    }
+    if (!identical(confirmClient, _apiClient)) return;
+    _config = config;
+    notifyListeners();
+
+    if (newPassword.isNotEmpty && config.httpAuthEnabled != true) {
+      // The frame took the request but is still open: firmware without the
+      // setting ignores the key, and says nothing about it. An open frame
+      // takes any password, so going back to the old one is safe, and saying
+      // protection is on would not be.
+      _adoptPassword(_device!, _apiBaseUrl!, device.password);
+      notifyListeners();
+      try {
+        await SavedDevices.addDevice(_device!);
+      } catch (_) {}
+      throw FramePasswordException(
+        config.httpAuthEnabled == null
+            ? "This frame's firmware does not support password protection. "
+                  'Update the firmware first.'
+            : 'The frame answered, but password protection is still off. '
+                  'Nothing was changed.',
+      );
+    }
+    // Turning it off cannot land here the other way round: with protection
+    // still on, the read-back without a password would have been refused.
+  }
+
+  static const _passwordRequestTimeout = Duration(seconds: 10);
+
+  /// Whether the frame at [baseUrl] is now guarded by exactly [password]:
+  /// it answers with that password and reports protection on or off to
+  /// match. A frame that is open answers any password, so answering alone
+  /// proves nothing.
+  Future<bool> _frameUses(String baseUrl, String password) async {
+    final probe = _newApiClient(baseUrl: baseUrl, password: password);
+    try {
+      final config = await probe.getConfig().timeout(_passwordRequestTimeout);
+      return config.httpAuthEnabled == password.isNotEmpty;
+    } catch (_) {
+      return false;
+    } finally {
+      probe.dispose();
+    }
+  }
+
+  static String _describeRefusal(ApiException e) {
+    if (e.isRateLimited) {
+      final wait = e.retryAfter;
+      final when = wait == null
+          ? 'a while'
+          : wait.inSeconds < 90
+          ? '${wait.inSeconds} seconds'
+          : '${(wait.inSeconds / 60).ceil()} minutes';
+      return 'The frame is refusing requests after too many wrong '
+          'passwords. Wait $when and try again. The password was not '
+          'changed.';
+    }
+    if (e.isUnauthorized) {
+      return 'The frame rejected the password this app has saved, so the '
+          'password was not changed. Enter the current password first '
+          "(\"I already know the frame's password\").";
+    }
+    if (e.statusCode == 400) {
+      String? detail;
+      try {
+        // Config errors come as {"status":"error","message":...}; the auth
+        // gate's own refusals as {"error":...}.
+        final body = jsonDecode(e.body) as Map<String, dynamic>;
+        detail = (body['message'] ?? body['error']) as String?;
+      } catch (_) {}
+      return 'The frame refused the new password'
+          '${detail == null || detail.isEmpty ? '' : ': $detail'}. '
+          'The password was not changed.';
+    }
+    return 'The frame could not change the password (HTTP ${e.statusCode}). '
+        'The app still uses the old one.';
   }
 
   void disconnect() {
@@ -198,7 +450,7 @@ class DeviceProvider extends ChangeNotifier {
       // then calling a reachable frame offline.
       if (e is ApiException && e.isUnauthorized) {
         _keepAliveFailures = 0;
-        if (!_needsPassword) {
+        if (!_needsPassword && !_changingPassword) {
           _markNeedsPassword();
           notifyListeners();
         }
@@ -230,9 +482,12 @@ class DeviceProvider extends ChangeNotifier {
         client.getPaletteSettings().timeout(const Duration(seconds: 5)),
         client.getConfig().timeout(const Duration(seconds: 5)),
       ]);
+      // A client since replaced (new password, other frame) may have read
+      // settings that no longer hold.
+      if (!identical(client, _apiClient)) return;
       _processingSettings = results[0] as Map<String, dynamic>;
       _paletteSettings = results[1] as Map<String, dynamic>;
-      _config = DeviceConfig.fromJson(results[2] as Map<String, dynamic>);
+      _config = results[2] as DeviceConfig;
       notifyListeners();
     } catch (e) {
       // A 401 is reported like the keep-alive's; anything else is ignored
@@ -242,7 +497,8 @@ class DeviceProvider extends ChangeNotifier {
       if (e is ApiException &&
           e.isUnauthorized &&
           identical(client, _apiClient) &&
-          !_needsPassword) {
+          !_needsPassword &&
+          !_changingPassword) {
         _markNeedsPassword();
         notifyListeners();
       }
@@ -280,7 +536,8 @@ class DeviceProvider extends ChangeNotifier {
       // replaced meanwhile (new password, other frame): the 401 is stale.
       if (e is ApiException &&
           e.isUnauthorized &&
-          identical(client, _apiClient)) {
+          identical(client, _apiClient) &&
+          !_changingPassword) {
         _markNeedsPassword();
       }
       _error = e.toString();

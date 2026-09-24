@@ -18,6 +18,11 @@ class DeviceConfig {
   final String staticGateway;
   final String dnsServer;
 
+  // Password on the frame's own HTTP API (#130). The frame never reports the
+  // password itself, only whether one is set. Null on older firmware, which
+  // has no such setting at all.
+  final bool? httpAuthEnabled;
+
   // Auto Rotate
   final bool autoRotate;
   final List<String>
@@ -61,6 +66,7 @@ class DeviceConfig {
     this.staticNetmask = '255.255.255.0',
     this.staticGateway = '',
     this.dnsServer = '',
+    this.httpAuthEnabled,
     required this.autoRotate,
     required this.rotateCron,
     this.supportsCron = true,
@@ -97,6 +103,7 @@ class DeviceConfig {
           : '255.255.255.0',
       staticGateway: json['static_gateway'] as String? ?? '',
       dnsServer: json['dns_server'] as String? ?? '',
+      httpAuthEnabled: json['http_auth_enabled'] as bool?,
       autoRotate: json['auto_rotate'] as bool? ?? false,
       // Prefer rotate_cron; fall back to a legacy rotate_interval (older
       // firmware) so the schedule still shows correctly, else the default.

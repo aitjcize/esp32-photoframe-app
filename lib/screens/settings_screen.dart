@@ -100,7 +100,9 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 // Advanced network settings (#43), collapsed by default. The
                 // static IP / DNS entries render only when the firmware
-                // reports ip_mode; the NTP server exists on all firmware.
+                // reports ip_mode; the NTP server exists on all firmware. The
+                // frame's password protection (#130) lives here too, next to
+                // the other connection details.
                 ExpansionTile(
                   title: const Text('Advanced Network'),
                   shape: const Border(),
@@ -201,6 +203,21 @@ class SettingsScreen extends StatelessWidget {
                         ),
                       ),
                     ],
+                    // Only firmware that has the setting reports it.
+                    if (config.httpAuthEnabled != null)
+                      ListTile(
+                        title: const Text('Password protection'),
+                        subtitle: Text(
+                          '${config.httpAuthEnabled! ? 'On' : 'Off'} \u2022 '
+                          '${provider.hasPassword ? 'password saved in this app' : 'no password saved in this app'}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _passwordProtection(
+                          context,
+                          provider,
+                          config.httpAuthEnabled!,
+                        ),
+                      ),
                   ],
                 ),
 
@@ -435,17 +452,6 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                 ListTile(
-                  title: const Text('Frame Password'),
-                  subtitle: Text(
-                    provider.hasPassword
-                        ? 'Saved \u2022 sent with every request'
-                        : 'Not set',
-                  ),
-                  leading: const Icon(Icons.lock_outline),
-                  trailing: const Icon(Icons.edit),
-                  onTap: () => _editFramePassword(context, provider),
-                ),
-                ListTile(
                   title: const Text('Export Config'),
                   leading: const Icon(Icons.download),
                   onTap: () => _exportConfig(context, provider),
@@ -597,25 +603,113 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  /// Password protection on the frame's own HTTP API (esp32-photoframe #130):
+  /// turn it on, change or remove the password on the frame, or just tell the
+  /// app a password that was set elsewhere.
+  void _passwordProtection(
+    BuildContext context,
+    DeviceProvider provider,
+    bool enabled,
+  ) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Password protection'),
+        children: [
+          ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: Text(enabled ? 'Change password' : 'Turn on'),
+            subtitle: const Text(
+              'Set a new password on the frame. Requests without it are '
+              'refused.',
+            ),
+            onTap: () => Navigator.pop(context, 'set'),
+          ),
+          if (enabled)
+            ListTile(
+              leading: const Icon(Icons.lock_open),
+              title: const Text('Turn off'),
+              subtitle: const Text('Remove the password from the frame.'),
+              onTap: () => Navigator.pop(context, 'off'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.key),
+            title: const Text("I already know the frame's password"),
+            subtitle: const Text(
+              'Save it in this app only. The frame is not changed.',
+            ),
+            onTap: () => Navigator.pop(context, 'known'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == 'known') {
+      _editFramePassword(context, provider);
+      return;
+    }
+
+    final turnOff = choice == 'off';
+    final result = await showDialog<({String? warning})>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) =>
+          _FramePasswordDialog(provider: provider, turnOff: turnOff),
+    );
+    if (result == null || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          result.warning != null
+              ? 'Check password protection'
+              : turnOff
+              ? 'Password protection is off'
+              : 'Password protection is on',
+        ),
+        content: Text(
+          [
+            if (result.warning != null) result.warning!,
+            turnOff
+                ? 'The photoframe server and the Home Assistant integration '
+                      'no longer need a password for this frame. You can '
+                      'clear it in their settings.'
+                : 'The photoframe server and the Home Assistant integration '
+                      "keep their own copy of this frame's password. Enter "
+                      'the new password in their settings too, or they will '
+                      'stop syncing with this frame.',
+          ].join('\n\n'),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// The password this app sends to the frame's own HTTP API
-  /// (esp32-photoframe #130). It is kept with the saved device, not pushed to
-  /// the frame -- the frame's password is set on its own web interface. The
-  /// field is write-only: the frame never reports the password back, so there
-  /// is nothing to prefill.
+  /// (esp32-photoframe #130), for a frame whose password was set elsewhere.
+  /// It is kept with the saved device, not pushed to the frame. The field is
+  /// write-only: the frame never reports the password back, so there is
+  /// nothing to prefill.
   void _editFramePassword(BuildContext context, DeviceProvider provider) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Frame Password'),
+        title: const Text("Frame's password"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Only needed when password protection is enabled on the frame\'s '
-              'own web interface. Stored on this phone and sent with every '
-              'request to this frame.',
+              'Enter the password the frame already has, for example one set '
+              'on its own web interface. Stored on this phone and sent with '
+              'every request to this frame. The frame is not changed.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -623,7 +717,7 @@ class SettingsScreen extends StatelessWidget {
               obscureText: true,
               autofocus: true,
               decoration: const InputDecoration(
-                labelText: 'New password',
+                labelText: 'Password',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1195,6 +1289,172 @@ class _OtaSectionState extends State<_OtaSection> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Sets, changes or removes the password on the frame itself, through
+/// [DeviceProvider.changeFramePassword]. Stays open on failure so the error
+/// can be read and the attempt repeated; pops with a record on success, whose
+/// warning is set when the frame took the change but confirming it failed.
+class _FramePasswordDialog extends StatefulWidget {
+  const _FramePasswordDialog({required this.provider, required this.turnOff});
+
+  final DeviceProvider provider;
+  final bool turnOff;
+
+  @override
+  State<_FramePasswordDialog> createState() => _FramePasswordDialogState();
+}
+
+class _FramePasswordDialogState extends State<_FramePasswordDialog> {
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  /// Why the typed passwords cannot be used, or null when they can.
+  String? _validate() {
+    final password = _password.text;
+    if (password.isEmpty) return 'Enter a password.';
+    if (password.contains('\u0000')) {
+      return 'The password cannot contain a NUL character.';
+    }
+    final bytes = utf8.encode(password).length;
+    if (bytes > DeviceProvider.maxFramePasswordBytes) {
+      return 'Too long: the frame accepts at most '
+          '${DeviceProvider.maxFramePasswordBytes} bytes (this is $bytes).';
+    }
+    if (password != _confirm.text) return 'The passwords do not match.';
+    return null;
+  }
+
+  void _fail(String message) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = message;
+    });
+  }
+
+  Future<void> _submit() async {
+    final invalid = widget.turnOff ? null : _validate();
+    if (invalid != null) {
+      setState(() => _error = invalid);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    String? warning;
+    try {
+      await widget.provider.changeFramePassword(
+        widget.turnOff ? '' : _password.text,
+      );
+    } on FramePasswordException catch (e) {
+      if (!e.applied) {
+        _fail(e.message);
+        return;
+      }
+      warning = e.message;
+    } catch (e) {
+      _fail('Failed: $e');
+      return;
+    }
+    if (mounted) Navigator.pop(context, (warning: warning));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final changing = widget.provider.config?.httpAuthEnabled ?? false;
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        title: Text(
+          widget.turnOff
+              ? 'Turn off password protection?'
+              : changing
+              ? 'Change password'
+              : 'Turn on password protection',
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.turnOff)
+                const Text(
+                  "Anyone on this network will be able to use the frame's "
+                  'web interface and API without a password.',
+                )
+              else ...[
+                const Text(
+                  'Requests to the frame without this password will be '
+                  'refused. It is also saved in this app.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _password,
+                  obscureText: true,
+                  autofocus: true,
+                  enabled: !_busy,
+                  decoration: const InputDecoration(
+                    labelText: 'New password',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _confirm,
+                  obscureText: true,
+                  enabled: !_busy,
+                  decoration: const InputDecoration(
+                    labelText: 'Repeat new password',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _submit(),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: widget.turnOff
+                ? FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  )
+                : null,
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(widget.turnOff ? 'Turn off' : 'Save'),
+          ),
+        ],
+      ),
     );
   }
 }
