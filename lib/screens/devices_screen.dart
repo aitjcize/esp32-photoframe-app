@@ -155,7 +155,11 @@ class _DevicesScreenState extends State<DevicesScreen> {
   /// is nothing to prefill even when one is already stored. [rejected] says
   /// the frame refused the one just sent, saved or typed.
   Future<String?> _promptForPassword(Device device, {required bool rejected}) {
-    final controller = TextEditingController();
+    // No controller: nothing to prefill, and the field's own state lasts
+    // exactly as long as the dialog. A controller made here would have to be
+    // disposed after showDialog returns, while the dialog is still animating
+    // out and may rebuild the field with it.
+    var password = '';
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -179,7 +183,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                 labelText: 'Frame password',
                 border: OutlineInputBorder(),
               ),
-              controller: controller,
+              onChanged: (v) => password = v,
               onSubmitted: (v) => Navigator.pop(context, v),
             ),
           ],
@@ -190,7 +194,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, password),
             child: const Text('Connect'),
           ),
         ],

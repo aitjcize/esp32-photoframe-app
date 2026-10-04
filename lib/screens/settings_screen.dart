@@ -711,7 +711,11 @@ class SettingsScreen extends StatelessWidget {
   /// write-only: the frame never reports the password back, so there is
   /// nothing to prefill.
   void _editFramePassword(BuildContext context, DeviceProvider provider) {
-    final controller = TextEditingController();
+    // No controller: nothing to prefill, and the field's own state lasts
+    // exactly as long as the dialog. A controller made here would have to be
+    // disposed after showDialog returns, while the dialog is still animating
+    // out and may rebuild the field with it.
+    var password = '';
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -733,7 +737,7 @@ class SettingsScreen extends StatelessWidget {
                 labelText: 'Password',
                 border: OutlineInputBorder(),
               ),
-              controller: controller,
+              onChanged: (v) => password = v,
             ),
           ],
         ),
@@ -752,7 +756,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           FilledButton(
             onPressed: () {
-              provider.setPassword(controller.text);
+              provider.setPassword(password);
               Navigator.pop(context);
             },
             child: const Text('Save'),
