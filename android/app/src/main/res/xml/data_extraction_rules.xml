@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup and device-to-device transfer rules for Android 12+ (the manifest's
+  android:dataExtractionRules). The app keeps everything in Flutter's shared
+  preferences, and that file includes the saved frames with their HTTP
+  passwords in the clear (saved_devices), so it is left out of both. Nothing
+  of value goes with it: the rest is album and image caches, which a fresh
+  install rebuilds from the frame.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>
+    </device-transfer>
+</data-extraction-rules>
