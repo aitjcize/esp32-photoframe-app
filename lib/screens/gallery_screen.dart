@@ -26,6 +26,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   final Set<String> _selectedImages = {}; // filepaths of selected images
   bool get _isSelecting => _selectedImages.isNotEmpty;
   bool _navigatingAway = false;
+  bool _lockoutNoticed = false;
 
   @override
   void initState() {
@@ -483,6 +484,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
           );
         }
       });
+    }
+
+    // A lockout (too many wrong passwords from this phone's address) is not
+    // offline: the frame is up, the keep-alive goes on and clears it once the
+    // lockout ends. So stay, and say so once per lockout.
+    if (provider.lockedOut && !_lockoutNoticed) {
+      _lockoutNoticed = true;
+      final message = describeLockout(provider.lockoutWait);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
+        }
+      });
+    } else if (!provider.lockedOut) {
+      _lockoutNoticed = false;
     }
 
     return Scaffold(

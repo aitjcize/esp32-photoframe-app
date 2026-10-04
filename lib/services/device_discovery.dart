@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:nsd/nsd.dart' as nsd;
 
 import '../models/device.dart';
-import 'api_client.dart';
 
 class DeviceDiscovery {
   nsd.Discovery? _discovery;
@@ -71,12 +70,17 @@ class DeviceDiscovery {
             final uri = Uri.parse(
               'http://${device.host}:${device.port}/api/time',
             );
+            // Sent without the saved password on purpose. A request with no
+            // credential gets 401 before the frame's lockout limiter and is
+            // never counted as a wrong password; one carrying a password the
+            // frame no longer takes would cost a failure every sweep and
+            // lock this phone out within minutes (esp32-photoframe #130).
             final response = await client
-                .get(uri, headers: frameAuthHeaders(device.password))
+                .get(uri)
                 .timeout(const Duration(seconds: 3));
             // 401 still proves the frame is up: it answered, it just wants a
-            // password we do not have (or no longer have). Calling it offline
-            // would hide it behind the wrong problem.
+            // password. Calling it offline would hide it behind the wrong
+            // problem.
             if (response.statusCode == 200 || response.statusCode == 401) {
               online.add(device.host);
             }

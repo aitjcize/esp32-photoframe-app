@@ -5,6 +5,7 @@ import 'package:esp32_photoframe_app/models/device.dart';
 import 'package:esp32_photoframe_app/providers/device_provider.dart';
 import 'package:esp32_photoframe_app/services/api_client.dart';
 import 'package:esp32_photoframe_app/services/saved_devices.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -39,17 +40,43 @@ class FakeFrame {
   /// Runs after the PATCH is applied, before it is answered.
   Future<void> Function()? onPatchApplied;
 
+  /// While set, refuse every request that carries a password with 429 and
+  /// this Retry-After, as the frame does for a client it has locked out. One
+  /// without a password still gets 401: the firmware answers those before its
+  /// limiter, and never counts them.
+  Duration? lockout;
+
+  /// While set, answer nothing at all: the frame is asleep or off the network.
+  bool unreachable = false;
+
   final List<http.Request> patches = [];
 
+  /// Every request, in order.
+  final List<http.Request> requests = [];
+
   Future<http.Response> handle(http.Request request) async {
+    requests.add(request);
+    if (unreachable) throw http.ClientException('connection refused');
     if (request.method == 'PATCH' && request.url.path == '/api/config') {
       patches.add(request);
       if (failPatch) throw http.ClientException('connection reset');
       if (patchResponse != null) return patchResponse!;
     }
-    if (password.isNotEmpty &&
-        request.headers['authorization'] != authHeader(password)) {
-      return http.Response('{"error":"authentication required"}', 401);
+    if (password.isNotEmpty) {
+      final auth = request.headers['authorization'];
+      if (auth == null) {
+        return http.Response('{"error":"authentication required"}', 401);
+      }
+      if (lockout != null) {
+        return http.Response(
+          '{"error":"too many wrong passwords, try again later"}',
+          429,
+          headers: {'retry-after': '${lockout!.inSeconds}'},
+        );
+      }
+      if (auth != authHeader(password)) {
+        return http.Response('{"error":"authentication required"}', 401);
+      }
     }
     switch ('${request.method} ${request.url.path}') {
       case 'GET /api/config':
@@ -91,17 +118,26 @@ void main() {
   /// needsPassword / deviceOffline as seen by every listener notification.
   late List<(bool, bool)> seen;
 
+  DeviceProvider newProvider() => DeviceProvider(
+    apiClientFactory: ({required baseUrl, required password}) => ApiClient(
+      baseUrl: baseUrl,
+      password: password,
+      client: MockClient(frame.handle),
+    ),
+  );
+
+  Device device(String password) =>
+      Device(name: 'Study', host: 'frame', password: password);
+
   Future<void> connect(String savedPassword) async {
-    provider = DeviceProvider(
-      apiClientFactory: ({required baseUrl, required password}) => ApiClient(
-        baseUrl: baseUrl,
-        password: password,
-        client: MockClient(frame.handle),
-      ),
-    );
-    await provider.connectToDevice(
-      Device(name: 'Study', host: 'frame', password: savedPassword),
-    );
+    provider = newProvider();
+    try {
+      await provider.connectToDevice(device(savedPassword));
+    } on ApiException catch (e) {
+      // A saved password the frame no longer takes: the test wants the
+      // provider left on the frame, flagging it.
+      if (!e.isUnauthorized) rethrow;
+    }
     // Let the settings refresh that connecting starts run out.
     await pumpEventQueue(times: 200);
     seen = [];
@@ -335,6 +371,291 @@ void main() {
       expect(frame.password, 'new');
       expect(provider.device!.password, 'new');
       expect(await savedPassword(), 'new');
+    });
+  });
+
+  // The frame locks a client out after five wrong passwords, for 30 s and
+  // then longer each time (esp32-photoframe #130). So a wrong password must
+  // cost one refused request, not a burst, and a lockout must not be taken
+  // for the frame being offline. Fake time: the keep-alive runs every 30 s.
+  group('the lockout after wrong passwords', () {
+    /// What the frame has been sent since its [since]th request.
+    List<String> sent(int since) => frame.requests
+        .skip(since)
+        .map((r) => '${r.method} ${r.url.path}')
+        .toList();
+
+    test('connecting sends one request, and nothing more until it is '
+        'answered', () {
+      fakeAsync((async) {
+        frame = FakeFrame('right');
+        final provider = newProvider();
+        Object? error;
+        provider
+            .connectToDevice(device('wrong'))
+            .then(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.flushMicrotasks();
+
+        expect(
+          error,
+          isA<ApiException>().having(
+            (e) => e.isUnauthorized,
+            'isUnauthorized',
+            isTrue,
+          ),
+        );
+        expect(sent(0), ['GET /api/system-info']);
+        expect(provider.needsPassword, isTrue);
+        // Nothing periodic: each request would be another wrong password.
+        async.elapse(const Duration(minutes: 10));
+        expect(frame.requests, hasLength(1));
+        expect(async.periodicTimerCount, 0);
+
+        // The right one: answered, so the keep-alive and refresh start.
+        SystemInfo? info;
+        provider.connectToDevice(device('right')).then((i) => info = i);
+        async.flushMicrotasks();
+        expect(info, isNotNull);
+        expect(provider.systemInfo, same(info));
+        expect(provider.needsPassword, isFalse);
+        expect(sent(1).first, 'GET /api/system-info');
+        expect(async.periodicTimerCount, 2);
+        final started = frame.requests.length;
+        async.elapse(const Duration(seconds: 30));
+        expect(sent(started), ['POST /api/keep_alive']);
+        provider.dispose();
+      });
+    });
+
+    test('a 401 stops the keep-alive until a new password is answered', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old');
+        final provider = newProvider();
+        provider.connectToDevice(device('old')).ignore();
+        async.flushMicrotasks();
+        expect(async.periodicTimerCount, 2);
+
+        // The password is changed on the frame.
+        frame.password = 'new';
+        final changed = frame.requests.length;
+        async.elapse(const Duration(seconds: 30));
+        expect(sent(changed), ['POST /api/keep_alive']);
+        expect(provider.needsPassword, isTrue);
+        // No more are sent with it: each would be another wrong password.
+        expect(async.periodicTimerCount, 0);
+        async.elapse(const Duration(minutes: 10));
+        expect(frame.requests, hasLength(changed + 1));
+
+        // A typo costs one request and leaves it stopped.
+        provider.setPassword('typo').ignore();
+        async.flushMicrotasks();
+        expect(sent(changed + 1), ['GET /api/config']);
+        expect(provider.needsPassword, isTrue);
+        expect(async.periodicTimerCount, 0);
+
+        // The right one: answered, so the keep-alive and refresh resume.
+        final entered = frame.requests.length;
+        provider.setPassword('new').ignore();
+        async.flushMicrotasks();
+        expect(sent(entered).first, 'GET /api/config');
+        expect(provider.needsPassword, isFalse);
+        expect(provider.config, isNotNull);
+        expect(async.periodicTimerCount, 2);
+        final resumed = frame.requests.length;
+        async.elapse(const Duration(seconds: 30));
+        expect(sent(resumed), ['POST /api/keep_alive']);
+        provider.dispose();
+      });
+    });
+
+    test('a lockout met by the keep-alive is not offline', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old');
+        final provider = newProvider();
+        provider.connectToDevice(device('old')).ignore();
+        async.flushMicrotasks();
+        final seen = <(bool, bool)>[];
+        provider.addListener(
+          () => seen.add((provider.deviceOffline, provider.needsPassword)),
+        );
+
+        // Something else at this address (a browser, say) got it locked out.
+        frame.lockout = const Duration(seconds: 30);
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.lockedOut, isTrue);
+        expect(provider.lockoutWait, const Duration(seconds: 30));
+        expect(provider.deviceOffline, isFalse);
+        expect(provider.needsPassword, isFalse);
+        // Refused through further keep-alives and a settings refresh too.
+        async.elapse(const Duration(minutes: 5));
+        expect(provider.lockedOut, isTrue);
+        expect(seen.where((s) => s.$1 || s.$2), isEmpty);
+        expect(async.periodicTimerCount, 2);
+
+        // Over: the next keep-alive is answered and clears it.
+        frame.lockout = null;
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.lockedOut, isFalse);
+        expect(provider.deviceOffline, isFalse);
+        provider.dispose();
+      });
+    });
+
+    test('connecting into a lockout reports it, not offline', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old')..lockout = const Duration(seconds: 30);
+        final provider = newProvider();
+        Object? error;
+        provider
+            .connectToDevice(device('old'))
+            .then(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.flushMicrotasks();
+
+        expect(
+          error,
+          isA<ApiException>()
+              .having((e) => e.isRateLimited, 'isRateLimited', isTrue)
+              .having(
+                (e) => e.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 30),
+              ),
+        );
+        expect(provider.lockedOut, isTrue);
+        expect(provider.deviceOffline, isFalse);
+        expect(provider.needsPassword, isFalse);
+        expect(async.periodicTimerCount, 0);
+        expect(
+          describeLockout((error as ApiException).retryAfter),
+          'The frame is refusing requests for 30 seconds after wrong '
+          'passwords.',
+        );
+        provider.dispose();
+      });
+    });
+
+    test('a password entered during a lockout is tried once it ends', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old');
+        final provider = newProvider();
+        provider.connectToDevice(device('old')).ignore();
+        async.flushMicrotasks();
+        frame.password = 'new';
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.needsPassword, isTrue);
+
+        // Entered while the frame refuses everything from this phone.
+        frame.lockout = const Duration(seconds: 30);
+        final entered = frame.requests.length;
+        provider.setPassword('new').ignore();
+        async.flushMicrotasks();
+        expect(sent(entered), ['GET /api/config']);
+        expect(provider.lockedOut, isTrue);
+        expect(provider.needsPassword, isFalse);
+        expect(provider.deviceOffline, isFalse);
+        expect(async.periodicTimerCount, 0);
+
+        // Nothing until the lockout is over, then that one request again.
+        async.elapse(const Duration(seconds: 29));
+        expect(frame.requests, hasLength(entered + 1));
+        frame.lockout = null;
+        async.elapse(const Duration(seconds: 2));
+        expect(sent(entered + 1).first, 'GET /api/config');
+        expect(provider.lockedOut, isFalse);
+        expect(provider.config, isNotNull);
+        expect(async.periodicTimerCount, 2);
+        provider.dispose();
+      });
+    });
+
+    test('a password the frame does not answer is tried again, one request '
+        'at a time', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old');
+        final provider = newProvider();
+        provider.connectToDevice(device('old')).ignore();
+        async.flushMicrotasks();
+        frame.password = 'new';
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.needsPassword, isTrue);
+
+        // Entered while the frame is asleep.
+        frame.unreachable = true;
+        final entered = frame.requests.length;
+        provider.setPassword('new').ignore();
+        async.flushMicrotasks();
+        expect(sent(entered), ['GET /api/config']);
+        expect(provider.needsPassword, isFalse);
+        expect(provider.deviceOffline, isFalse);
+        expect(async.periodicTimerCount, 0);
+
+        // Asked again at the keep-alive's pace, and called offline after the
+        // second failure as the keep-alive would; still nothing in parallel.
+        async.elapse(const Duration(seconds: 30));
+        expect(sent(entered), ['GET /api/config', 'GET /api/config']);
+        expect(provider.deviceOffline, isTrue);
+        expect(async.periodicTimerCount, 0);
+
+        // Back: answered, so the keep-alive and refresh start.
+        frame.unreachable = false;
+        async.elapse(const Duration(seconds: 30));
+        expect(sent(entered)[2], 'GET /api/config');
+        expect(provider.deviceOffline, isFalse);
+        expect(provider.config, isNotNull);
+        expect(async.periodicTimerCount, 2);
+        provider.dispose();
+      });
+    });
+
+    test('a lockout met while retrying an unanswered password is not '
+        'offline', () {
+      fakeAsync((async) {
+        frame = FakeFrame('old');
+        final provider = newProvider();
+        provider.connectToDevice(device('old')).ignore();
+        async.flushMicrotasks();
+        frame.password = 'new';
+        async.elapse(const Duration(seconds: 30));
+        frame.unreachable = true;
+        provider.setPassword('new').ignore();
+        async.flushMicrotasks();
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.deviceOffline, isTrue);
+
+        // Back, but locked out by something else at this address: that is
+        // an answer, so the offline verdict is stale.
+        frame.unreachable = false;
+        frame.lockout = const Duration(seconds: 30);
+        async.elapse(const Duration(seconds: 30));
+        expect(provider.lockedOut, isTrue);
+        expect(provider.deviceOffline, isFalse);
+        expect(provider.needsPassword, isFalse);
+
+        frame.lockout = null;
+        async.elapse(const Duration(seconds: 31));
+        expect(provider.lockedOut, isFalse);
+        expect(provider.deviceOffline, isFalse);
+        expect(async.periodicTimerCount, 2);
+        provider.dispose();
+      });
+    });
+
+    test('describeWait rounds the way the frame counts', () {
+      expect(describeWait(null), 'a while');
+      expect(describeWait(const Duration(seconds: 1)), '1 second');
+      expect(describeWait(const Duration(seconds: 89)), '89 seconds');
+      expect(describeWait(const Duration(seconds: 90)), '2 minutes');
+      expect(describeWait(const Duration(minutes: 15)), '15 minutes');
     });
   });
 

@@ -66,13 +66,13 @@ class _DevicesScreenState extends State<DevicesScreen> {
       _showConnectingDialog();
 
       final provider = context.read<DeviceProvider>();
-      // Resolve hostname and check if device is online
-      await provider.connectToDevice(candidate);
+      // Resolves the host and sends one request with the password. The
+      // provider sends nothing else until that is answered, so a wrong
+      // password costs one refusal, and the frame's lockout (after five of
+      // them) is not spent on a single typo.
       SystemInfo sysInfo;
       try {
-        sysInfo = await provider.apiClient!.getSystemInfo().timeout(
-          const Duration(seconds: 5),
-        );
+        sysInfo = await provider.connectToDevice(candidate);
       } catch (e) {
         if (!mounted) return;
         Navigator.pop(context); // dismiss spinner
@@ -88,9 +88,20 @@ class _DevicesScreenState extends State<DevicesScreen> {
           candidate = candidate.copyWith(password: password);
           continue;
         }
+        // Nothing to hold on to: with no screen watching it, a connection
+        // kept here would only keep the frame awake. Tapping again retries.
         provider.disconnect();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Device is offline or unreachable')),
+          SnackBar(
+            content: Text(
+              // A lockout is the frame refusing this phone for a while after
+              // wrong passwords. It is up; "offline" would send the owner
+              // chasing the network instead of waiting.
+              e is ApiException && e.isRateLimited
+                  ? '${describeLockout(e.retryAfter)} Wait, then try again.'
+                  : 'Device is offline or unreachable',
+            ),
+          ),
         );
         return;
       }
@@ -141,7 +152,8 @@ class _DevicesScreenState extends State<DevicesScreen> {
 
   /// Asks for the frame's HTTP API password. Returns null when cancelled. The
   /// field is write-only: the frame never reports the password back, so there
-  /// is nothing to prefill even when one is already stored.
+  /// is nothing to prefill even when one is already stored. [rejected] says
+  /// the frame refused the one just sent, saved or typed.
   Future<String?> _promptForPassword(Device device, {required bool rejected}) {
     final controller = TextEditingController();
     return showDialog<String>(
@@ -154,20 +166,20 @@ class _DevicesScreenState extends State<DevicesScreen> {
           children: [
             Text(
               rejected
-                  ? '${device.name} rejected the saved password. Enter the '
+                  ? '${device.name} rejected the password. Enter the '
                         "password set on the frame's own web interface."
                   : '${device.name} is password-protected. Enter the password '
                         "set on the frame's own web interface.",
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: controller,
               autofocus: true,
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Frame password',
                 border: OutlineInputBorder(),
               ),
+              controller: controller,
               onSubmitted: (v) => Navigator.pop(context, v),
             ),
           ],

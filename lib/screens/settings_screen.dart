@@ -24,8 +24,22 @@ class SettingsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Settings'),
         bottom: provider.needsPassword
-            ? _PasswordBanner(
-                onEnter: () => _editFramePassword(context, provider),
+            ? _FrameBanner(
+                icon: Icons.lock_outline,
+                message:
+                    'The frame wants a password. Changes here fail until it '
+                    'is entered.',
+                action: TextButton(
+                  onPressed: () => _editFramePassword(context, provider),
+                  child: const Text('Enter'),
+                ),
+              )
+            : provider.lockedOut
+            ? _FrameBanner(
+                icon: Icons.hourglass_top,
+                message:
+                    '${describeLockout(provider.lockoutWait)} Changes here '
+                    'fail until then.',
               )
             : null,
       ),
@@ -713,13 +727,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: controller,
               obscureText: true,
               autofocus: true,
               decoration: const InputDecoration(
                 labelText: 'Password',
                 border: OutlineInputBorder(),
               ),
+              controller: controller,
             ),
           ],
         ),
@@ -1459,15 +1473,18 @@ class _FramePasswordDialogState extends State<_FramePasswordDialog> {
   }
 }
 
-/// Shown while the frame is refusing our password. Only the gallery navigates
+/// Shown while the frame is refusing our requests: it wants a password we do
+/// not have, or it is locked out after wrong ones. Only the gallery navigates
 /// away on a 401, and Settings replaces it, so a password changed on the frame
 /// while this screen is open has to be surfaced here -- otherwise every edit
 /// just fails. Saving a password clears [DeviceProvider.needsPassword], and
-/// with it this banner.
-class _PasswordBanner extends StatelessWidget implements PreferredSizeWidget {
-  const _PasswordBanner({required this.onEnter});
+/// the lockout clears itself once the frame answers again.
+class _FrameBanner extends StatelessWidget implements PreferredSizeWidget {
+  const _FrameBanner({required this.icon, required this.message, this.action});
 
-  final VoidCallback onEnter;
+  final IconData icon;
+  final String message;
+  final Widget? action;
 
   @override
   Size get preferredSize => const Size.fromHeight(64);
@@ -1483,16 +1500,15 @@ class _PasswordBanner extends StatelessWidget implements PreferredSizeWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              Icon(Icons.lock_outline, color: scheme.onErrorContainer),
+              Icon(icon, color: scheme.onErrorContainer),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'The frame wants a password. Changes here fail until it is '
-                  'entered.',
+                  message,
                   style: TextStyle(color: scheme.onErrorContainer),
                 ),
               ),
-              TextButton(onPressed: onEnter, child: const Text('Enter')),
+              ?action,
             ],
           ),
         ),

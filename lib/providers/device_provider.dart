@@ -20,6 +20,22 @@ ApiClient _defaultApiClient({
   required String password,
 }) => ApiClient(baseUrl: baseUrl, password: password);
 
+/// For the user: how long the frame said to wait, from the Retry-After of
+/// its refusal, or 'a while' when it did not say.
+String describeWait(Duration? wait) {
+  if (wait == null) return 'a while';
+  final seconds = wait.inSeconds;
+  if (seconds < 90) return '$seconds second${seconds == 1 ? '' : 's'}';
+  return '${(seconds / 60).ceil()} minutes';
+}
+
+/// For the user: the frame answered 429 (esp32-photoframe #130). Too many
+/// wrong passwords came from this phone's address, and the frame refuses
+/// every request, right password or not, until [wait] is over.
+String describeLockout(Duration? wait) =>
+    'The frame is refusing requests for ${describeWait(wait)} after wrong '
+    'passwords.';
+
 /// Why changing the frame's own password failed. [message] is written for the
 /// user. [applied] is true when the frame did take the new password and only
 /// confirming it afterwards failed: the app then holds the new password, since
@@ -56,9 +72,15 @@ class DeviceProvider extends ChangeNotifier {
   String? _error;
   Timer? _keepAliveTimer;
   Timer? _backgroundRefreshTimer;
+
+  /// Sends the first request of a password again when the frame did not
+  /// answer it, or refused it with a lockout. See [_firstRequest].
+  Timer? _retryTimer;
   int _keepAliveFailures = 0;
   bool _deviceOffline = false;
   bool _needsPassword = false;
+  bool _lockedOut = false;
+  Duration? _lockoutWait;
 
   /// Set while [changeFramePassword] waits on the frame. Once the frame
   /// applies the new password, requests still in flight with the old one are
@@ -75,6 +97,18 @@ class DeviceProvider extends ChangeNotifier {
   /// The frame answered 401: it has a password and the one we hold is missing
   /// or stale. Distinct from [deviceOffline], which means unreachable.
   bool get needsPassword => _needsPassword;
+
+  /// The frame answered 429: too many wrong passwords came from this phone's
+  /// address, and it refuses every request, right password or not, until the
+  /// lockout ends (esp32-photoframe #130). It is reachable, and the refusal
+  /// says nothing about the password held here -- the frame refuses before
+  /// looking at it -- so this is neither [deviceOffline] nor [needsPassword].
+  /// The keep-alive goes on asking, and the next answer clears it.
+  bool get lockedOut => _lockedOut;
+
+  /// How long the frame said to wait when it last refused with 429, from its
+  /// Retry-After; null when it did not say. Meaningful while [lockedOut].
+  Duration? get lockoutWait => _lockoutWait;
 
   /// Whether a password is stored for the connected frame.
   bool get hasPassword => _device?.password.isNotEmpty ?? false;
@@ -111,13 +145,27 @@ class DeviceProvider extends ChangeNotifier {
   /// Connect to a device. If the host is a .local mDNS name,
   /// resolves to IP first for reliable HTTP. The original device
   /// (with mDNS hostname) is kept for persistence.
-  Future<void> connectToDevice(Device device) async {
+  ///
+  /// Then asks the frame for its system info with the device's password, and
+  /// returns it. The keep-alive and the background refresh start only once
+  /// that is answered: the frame locks a client out after five wrong
+  /// passwords, so a wrong one must cost one refused request, not the four
+  /// those would send at once. Throws what that request threw -- an
+  /// [ApiException] that [ApiException.isUnauthorized] (the password is
+  /// wrong or missing; [needsPassword] is raised) or
+  /// [ApiException.isRateLimited] ([lockedOut] is raised), or a timeout or
+  /// socket error when the frame cannot be reached. The provider then stays
+  /// on the device, sending nothing more than that request again when the
+  /// frame may answer later (see [_firstRequest]), so the caller can try
+  /// another password or [disconnect].
+  Future<SystemInfo> connectToDevice(Device device) async {
     _stopKeepAlive();
     _apiClient?.dispose();
     // Settings shown for the previous frame say nothing about this one, and
     // would offer it options its firmware may not have.
     if (_device != device) _config = null;
     _device = device;
+    _systemInfo = null;
 
     // Resolve .local hostname to IP for API requests. IPv4 only: the
     // firmware also publishes an IPv6 link-local AAAA record, and a bare
@@ -139,25 +187,28 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     _apiBaseUrl = 'http://$apiHost:${device.port}';
-    _apiClient = _newApiClient(
+    final client = _newApiClient(
       baseUrl: _apiBaseUrl!,
       password: device.password,
     );
+    _apiClient = client;
     _error = null;
     _keepAliveFailures = 0;
     _deviceOffline = false;
     _needsPassword = false;
-    _startKeepAlive();
+    _clearLockout();
     notifyListeners();
+
+    return _firstRequest(
+      client,
+      client.getSystemInfo,
+      onAnswered: (info) => _systemInfo = info,
+    );
   }
 
   // ChangeNotifier doesn't have mounted, so we track disposal
   bool _disposed = false;
   bool get mounted => !_disposed;
-
-  void connectToHost(String host, {int port = 80}) {
-    connectToDevice(Device(name: host, host: host, port: port));
-  }
 
   /// Change the password sent to the connected frame, and persist it with the
   /// saved device so the next connection starts out authenticated. The frame
@@ -169,23 +220,117 @@ class DeviceProvider extends ChangeNotifier {
     if (device == null || baseUrl == null) return;
     _adoptPassword(device, baseUrl, password);
     notifyListeners();
-    // Anything that failed under the old password (Settings may still be
-    // waiting on its config) would otherwise wait for the 5-minute refresh.
-    // This also re-flags a wrong password straight away.
-    unawaited(_refreshSettingsInBackground());
+    // Try it straight away rather than leave it to the user to notice, and
+    // give Settings the config it may still be waiting on. The keep-alive
+    // and the background refresh, stopped by the 401 this answers, start
+    // again once the frame has taken it.
+    final client = _apiClient!;
+    _firstRequest(
+      client,
+      client.getConfig,
+      onAnswered: (config) => _config = config,
+    ).ignore();
     await SavedDevices.addDevice(_device!);
   }
 
   /// Switch to a new client that sends [password], and clear whatever the old
-  /// one had flagged. Callers notify and persist.
+  /// one had flagged. Callers notify and persist. The periodic requests stop
+  /// until the frame has answered the new password, so that a wrong one is
+  /// refused once, not once per request in flight: callers start them again
+  /// through [_firstRequest], or [_startKeepAlive] when the password has
+  /// already been answered.
   void _adoptPassword(Device device, String baseUrl, String password) {
     _device = device.copyWith(password: password);
     _apiClient?.dispose();
     _apiClient = _newApiClient(baseUrl: baseUrl, password: password);
+    _stopKeepAlive();
     _needsPassword = false;
     _deviceOffline = false;
     _keepAliveFailures = 0;
   }
+
+  static const _firstRequestTimeout = Duration(seconds: 5);
+  static const _keepAliveInterval = Duration(seconds: 30);
+
+  /// The firmware's shortest lockout, for a 429 that carries no Retry-After.
+  static const _lockoutFallback = Duration(seconds: 30);
+
+  /// Sends the first request of a password, before anything periodic goes
+  /// out with it. [onAnswered] takes the reply while [client] is still the
+  /// current one; the keep-alive and the background refresh then start. A
+  /// 401 raises [needsPassword] and nothing more is sent. A 429 raises
+  /// [lockedOut], and the request is sent once more when the lockout ends,
+  /// since the refusal says nothing about the password: the frame refuses
+  /// before looking at it. No answer, or any other error, says nothing
+  /// about it either: the request is sent again at the keep-alive's pace,
+  /// still one at a time, and the frame is called offline after two
+  /// failures as the keep-alive would. Rethrows whatever [request] threw.
+  Future<T> _firstRequest<T>(
+    ApiClient client,
+    Future<T> Function() request, {
+    required void Function(T reply) onAnswered,
+  }) async {
+    final T reply;
+    try {
+      reply = await request().timeout(_firstRequestTimeout);
+    } catch (e) {
+      if (_isCurrent(client)) {
+        if (e is ApiException && e.isUnauthorized) {
+          if (!_needsPassword && !_changingPassword) {
+            _markNeedsPassword();
+            notifyListeners();
+          }
+        } else if (e is ApiException && e.isRateLimited) {
+          _markLockedOut(e.retryAfter);
+          _retryFirstRequest(
+            client,
+            request,
+            onAnswered,
+            after:
+                (e.retryAfter ?? _lockoutFallback) + const Duration(seconds: 1),
+          );
+          notifyListeners();
+        } else {
+          _keepAliveFailures++;
+          if (_keepAliveFailures >= 2 && !_deviceOffline) {
+            _deviceOffline = true;
+            notifyListeners();
+          }
+          _retryFirstRequest(
+            client,
+            request,
+            onAnswered,
+            after: _keepAliveInterval,
+          );
+        }
+      }
+      rethrow;
+    }
+    if (!_isCurrent(client)) return reply;
+    onAnswered(reply);
+    _noteAnswered();
+    notifyListeners();
+    return reply;
+  }
+
+  void _retryFirstRequest<T>(
+    ApiClient client,
+    Future<T> Function() request,
+    void Function(T reply) onAnswered, {
+    required Duration after,
+  }) {
+    _retryTimer?.cancel();
+    _retryTimer = Timer(after, () {
+      if (!_isCurrent(client)) return;
+      _firstRequest(client, request, onAnswered: onAnswered).ignore();
+    });
+  }
+
+  /// Whether [client] is still the one requests go through: not replaced by
+  /// a reconnect or a new password, and this provider not disposed. Replies
+  /// to any other say nothing about the current password.
+  bool _isCurrent(ApiClient client) =>
+      !_disposed && identical(client, _apiClient);
 
   /// Set, change or (with an empty [newPassword]) remove the password on the
   /// frame's own HTTP API, then switch this app over to it.
@@ -251,8 +396,10 @@ class DeviceProvider extends ChangeNotifier {
       final currentBaseUrl = _apiBaseUrl;
       final stillConnected =
           current != null && current == device && currentBaseUrl != null;
+      ApiClient? adopted;
       if (stillConnected) {
         _adoptPassword(current, currentBaseUrl, newPassword);
+        adopted = _apiClient;
         notifyListeners();
       }
       // Saved even if the user has since moved to another frame, so that
@@ -262,6 +409,16 @@ class DeviceProvider extends ChangeNotifier {
           stillConnected ? _device! : device.copyWith(password: newPassword),
         );
       } catch (_) {
+        // The frame has the new password and the app holds it, so the
+        // periodic requests may go on. The read-back below is skipped, so
+        // try the password the way it would have, one request first.
+        if (adopted != null && identical(adopted, _apiClient)) {
+          _firstRequest(
+            adopted,
+            adopted.getConfig,
+            onAnswered: (config) => _config = config,
+          ).ignore();
+        }
         throw const FramePasswordException(
           'The frame took the new password, but this app could not save it. '
           "If the frame asks for it later, enter it with \"I already know "
@@ -289,6 +446,8 @@ class DeviceProvider extends ChangeNotifier {
           await _frameUses(_apiBaseUrl!, device.password)) {
         if (identical(confirmClient, _apiClient)) {
           _adoptPassword(_device!, _apiBaseUrl!, device.password);
+          // Just answered with the old password, so no need to try it first.
+          _startKeepAlive();
           notifyListeners();
           try {
             await SavedDevices.addDevice(_device!);
@@ -305,6 +464,11 @@ class DeviceProvider extends ChangeNotifier {
           !_needsPassword) {
         _markNeedsPassword();
         notifyListeners();
+      } else if (identical(confirmClient, _apiClient)) {
+        // No answer, or refused for another reason. The frame did take the
+        // password -- the PATCH, or _frameUses, said so -- so the keep-alive
+        // may run with it, and will find out whether the frame is reachable.
+        _startKeepAlive();
       }
       throw const FramePasswordException(
         'The frame accepted the new password, but reading its settings back '
@@ -314,6 +478,8 @@ class DeviceProvider extends ChangeNotifier {
     }
     if (!identical(confirmClient, _apiClient)) return;
     _config = config;
+    // The new password is answered: the periodic requests may run with it.
+    _noteAnswered();
     notifyListeners();
 
     if (newPassword.isNotEmpty && config.httpAuthEnabled != true) {
@@ -322,6 +488,7 @@ class DeviceProvider extends ChangeNotifier {
       // takes any password, so going back to the old one is safe, and saying
       // protection is on would not be.
       _adoptPassword(_device!, _apiBaseUrl!, device.password);
+      _startKeepAlive();
       notifyListeners();
       try {
         await SavedDevices.addDevice(_device!);
@@ -358,15 +525,9 @@ class DeviceProvider extends ChangeNotifier {
 
   static String _describeRefusal(ApiException e) {
     if (e.isRateLimited) {
-      final wait = e.retryAfter;
-      final when = wait == null
-          ? 'a while'
-          : wait.inSeconds < 90
-          ? '${wait.inSeconds} seconds'
-          : '${(wait.inSeconds / 60).ceil()} minutes';
       return 'The frame is refusing requests after too many wrong '
-          'passwords. Wait $when and try again. The password was not '
-          'changed.';
+          'passwords. Wait ${describeWait(e.retryAfter)} and try again. The '
+          'password was not changed.';
     }
     if (e.isUnauthorized) {
       return 'The frame rejected the password this app has saved, so the '
@@ -394,6 +555,7 @@ class DeviceProvider extends ChangeNotifier {
     _keepAliveFailures = 0;
     _deviceOffline = false;
     _needsPassword = false;
+    _clearLockout();
     _apiClient?.dispose();
     _apiClient = null;
     _apiBaseUrl = null;
@@ -410,8 +572,14 @@ class DeviceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Starts the periodic keep-alive and settings refresh, and refreshes the
+  /// settings now. Only once the frame has answered a request with the
+  /// current password (see [_firstRequest]); nothing to do while they run.
   void _startKeepAlive() {
-    _keepAliveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    if (_keepAliveTimer != null) return;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _keepAliveTimer = Timer.periodic(_keepAliveInterval, (_) {
       _sendKeepAlive();
     });
     // Refresh settings in background every 5 minutes
@@ -426,6 +594,8 @@ class DeviceProvider extends ChangeNotifier {
     _keepAliveTimer = null;
     _backgroundRefreshTimer?.cancel();
     _backgroundRefreshTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   Future<void> _sendKeepAlive() async {
@@ -435,16 +605,11 @@ class DeviceProvider extends ChangeNotifier {
       await client.keepAlive().timeout(const Duration(seconds: 5));
       // Answered by a client setPassword or a reconnect has since replaced:
       // says nothing about the current one.
-      if (!identical(client, _apiClient)) return;
-      _keepAliveFailures = 0;
+      if (!_isCurrent(client)) return;
       // A success also means the password (if any) is accepted again.
-      if (_deviceOffline || _needsPassword) {
-        _deviceOffline = false;
-        _needsPassword = false;
-        notifyListeners();
-      }
+      if (_noteAnswered()) notifyListeners();
     } catch (e) {
-      if (!identical(client, _apiClient)) return;
+      if (!_isCurrent(client)) return;
       // A 401 is definitive -- the frame is up, it just wants a password we do
       // not have. Report it at once instead of burning the retry budget and
       // then calling a reachable frame offline.
@@ -454,6 +619,16 @@ class DeviceProvider extends ChangeNotifier {
           _markNeedsPassword();
           notifyListeners();
         }
+        return;
+      }
+      // A 429 is the frame's lockout: it answered, so it is not offline, and
+      // it refused before looking at the password, so this says nothing
+      // about that either. The keep-alive goes on -- a refusal during the
+      // lockout does not extend it -- and the first answer after it says
+      // whether the password still works.
+      if (e is ApiException && e.isRateLimited) {
+        _markLockedOut(e.retryAfter);
+        notifyListeners();
         return;
       }
       _keepAliveFailures++;
@@ -468,9 +643,47 @@ class DeviceProvider extends ChangeNotifier {
   /// password is fixed, so it is reported through [deviceOffline] as well --
   /// that is what sends the gallery back to the device list, where the
   /// password is asked for -- with [needsPassword] saying why.
+  ///
+  /// The periodic requests stop: each would be another wrong password to a
+  /// frame that locks this phone out after five, for longer each time. They
+  /// start again once a new password is answered (see [_firstRequest]).
   void _markNeedsPassword() {
     _needsPassword = true;
     _deviceOffline = true;
+    // The frame looked at the password, so any lockout is over.
+    _clearLockout();
+    _stopKeepAlive();
+  }
+
+  /// The frame answered 429; see [lockedOut].
+  void _markLockedOut(Duration? wait) {
+    _lockedOut = true;
+    _lockoutWait = wait;
+    // It answered, so it is reachable: an offline verdict from earlier
+    // failures is stale. Not when offline stands in for needsPassword, which
+    // a 429 says nothing about.
+    _keepAliveFailures = 0;
+    if (!_needsPassword) _deviceOffline = false;
+  }
+
+  void _clearLockout() {
+    _lockedOut = false;
+    _lockoutWait = null;
+  }
+
+  /// A request with the current password was answered: the frame is
+  /// reachable and takes the password, so whatever its last refusal said is
+  /// over, and the periodic requests may run. Returns whether a flag
+  /// changed; the caller notifies.
+  bool _noteAnswered() {
+    if (_disposed) return false;
+    _keepAliveFailures = 0;
+    _startKeepAlive();
+    if (!_deviceOffline && !_needsPassword && !_lockedOut) return false;
+    _deviceOffline = false;
+    _needsPassword = false;
+    _clearLockout();
+    return true;
   }
 
   Future<void> _refreshSettingsInBackground() async {
@@ -484,22 +697,25 @@ class DeviceProvider extends ChangeNotifier {
       ]);
       // A client since replaced (new password, other frame) may have read
       // settings that no longer hold.
-      if (!identical(client, _apiClient)) return;
+      if (!_isCurrent(client)) return;
       _processingSettings = results[0] as Map<String, dynamic>;
       _paletteSettings = results[1] as Map<String, dynamic>;
       _config = results[2] as DeviceConfig;
+      _noteAnswered();
       notifyListeners();
     } catch (e) {
-      // A 401 is reported like the keep-alive's; anything else is ignored
-      // and the cached values remain.
-      // A 401 from a client since replaced by setPassword says nothing about
-      // the new password.
-      if (e is ApiException &&
-          e.isUnauthorized &&
-          identical(client, _apiClient) &&
-          !_needsPassword &&
-          !_changingPassword) {
-        _markNeedsPassword();
+      // A 401 or 429 is reported like the keep-alive's; anything else is
+      // ignored and the cached values remain.
+      // A refusal of a client since replaced by setPassword says nothing
+      // about the new password.
+      if (!_isCurrent(client) || e is! ApiException) return;
+      if (e.isUnauthorized) {
+        if (!_needsPassword && !_changingPassword) {
+          _markNeedsPassword();
+          notifyListeners();
+        }
+      } else if (e.isRateLimited) {
+        _markLockedOut(e.retryAfter);
         notifyListeners();
       }
     }
@@ -514,6 +730,7 @@ class DeviceProvider extends ChangeNotifier {
 
     try {
       _systemInfo = await _apiClient!.getSystemInfo();
+      if (identical(client, _apiClient)) _noteAnswered();
       // Update device name from system info
       if (_systemInfo != null && _device != null) {
         // copyWith, so the stored password survives the rename.
@@ -534,11 +751,12 @@ class DeviceProvider extends ChangeNotifier {
       // to the device list to ask, rather than sitting on a failing screen
       // until the next keep-alive notices. Not if the client has been
       // replaced meanwhile (new password, other frame): the 401 is stale.
-      if (e is ApiException &&
-          e.isUnauthorized &&
-          identical(client, _apiClient) &&
-          !_changingPassword) {
-        _markNeedsPassword();
+      if (e is ApiException && identical(client, _apiClient)) {
+        if (e.isUnauthorized && !_changingPassword) {
+          _markNeedsPassword();
+        } else if (e.isRateLimited) {
+          _markLockedOut(e.retryAfter);
+        }
       }
       _error = e.toString();
     } finally {
