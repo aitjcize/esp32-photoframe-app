@@ -825,10 +825,10 @@ packages:
     dependency: "direct main"
     description:
       name: wifi_iot
-      sha256: "0861aed0c0afd6031b4337811d31cdd181c594a8a2c73e94826ea21d2cb4707b"
+      sha256: "466aa682dfec9347f359ed552a35a2bc046597c39eb6005b36627b0bc8819d70"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.19+2"
+    version: "0.3.19+3"
   wifi_scan:
     dependency: "direct main"
     description:
