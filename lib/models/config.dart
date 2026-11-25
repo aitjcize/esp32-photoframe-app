@@ -9,7 +9,7 @@ class DeviceConfig {
   final String timezone;
   final String ntpServer;
 
-  // Advanced network settings (#43). Old firmware doesn't have these keys;
+  // Advanced section, network settings (#43). Old firmware doesn't have these keys;
   // supportsStaticIp gates the UI so old devices render as before.
   final bool supportsStaticIp;
   final String ipMode; // "dhcp" or "static"

@@ -112,13 +112,13 @@ class SettingsScreen extends StatelessWidget {
                     'timezone',
                   ),
                 ),
-                // Advanced network settings (#43), collapsed by default. The
-                // static IP / DNS entries render only when the firmware
-                // reports ip_mode; the NTP server exists on all firmware. The
-                // frame's password protection (#130) lives here too, next to
-                // the other connection details.
+                // Advanced (#43), collapsed by default. The static IP / DNS
+                // entries render only when the firmware reports ip_mode; the
+                // NTP server exists on all firmware. The frame's password
+                // protection (#130) lives here too: settings few frames ever
+                // need.
                 ExpansionTile(
-                  title: const Text('Advanced Network'),
+                  title: const Text('Advanced'),
                   shape: const Border(),
                   children: [
                     ListTile(
