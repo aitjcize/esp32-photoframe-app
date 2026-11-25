@@ -115,8 +115,8 @@ class SettingsScreen extends StatelessWidget {
                 // Advanced (#43), collapsed by default. The static IP / DNS
                 // entries render only when the firmware reports ip_mode; the
                 // NTP server exists on all firmware. The frame's password
-                // protection (#130) lives here too: settings few frames ever
-                // need.
+                // protection (#130) and mirroring the panel (#161) live here
+                // too: settings few frames ever need.
                 ExpansionTile(
                   title: const Text('Advanced'),
                   shape: const Border(),
@@ -231,6 +231,18 @@ class SettingsScreen extends StatelessWidget {
                           provider,
                           config.httpAuthEnabled!,
                         ),
+                      ),
+                    // Only firmware that has the setting reports it.
+                    if (config.displayMirror != null)
+                      SwitchListTile(
+                        title: const Text('Mirror the picture'),
+                        subtitle: const Text(
+                          'Turn on if text on the frame reads backwards, e.g. '
+                          'with a replacement panel that scans the other way',
+                        ),
+                        value: config.displayMirror!,
+                        onChanged: (v) =>
+                            provider.updateConfig({'display_mirror': v}),
                       ),
                   ],
                 ),

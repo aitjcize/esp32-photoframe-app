@@ -6,6 +6,10 @@ class DeviceConfig {
   final String wifiSsid;
   final String displayOrientation;
   final int displayRotationDeg;
+  // Mirror the picture left to right, for a panel that scans the other way
+  // from the one the board was built for (firmware #161). Null on firmware
+  // without the setting, which hides it.
+  final bool? displayMirror;
   final String timezone;
   final String ntpServer;
 
@@ -58,6 +62,7 @@ class DeviceConfig {
     required this.wifiSsid,
     required this.displayOrientation,
     required this.displayRotationDeg,
+    this.displayMirror,
     required this.timezone,
     required this.ntpServer,
     this.supportsStaticIp = false,
@@ -92,6 +97,7 @@ class DeviceConfig {
       wifiSsid: json['wifi_ssid'] as String? ?? '',
       displayOrientation: json['display_orientation'] as String? ?? 'landscape',
       displayRotationDeg: (json['display_rotation_deg'] as num?)?.toInt() ?? 0,
+      displayMirror: json['display_mirror'] as bool?,
       timezone: json['timezone'] as String? ?? '',
       ntpServer: json['ntp_server'] as String? ?? '',
       // Old firmware has no static IP / DNS support and no ip_mode key.
